@@ -13,20 +13,20 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - uses: actions/checkout@v3
+    - uses: actions/checkout@v3
 
-      - name: Check if it is the last day of the month
-        if: github.event_name == 'schedule'
-        run: |
-          # Calculate tomorrow's date
-          TOMORROW=$(date -d "+1 day" +%d)
-          if [ "$TOMORROW" != "01" ]; then
-            echo "Not the last day of the month. Skipping."
-            exit 0
-          fi
-          echo "It is the last day of the month. Proceeding."
+    - name: Check if it is the last day of the month
+      if: github.event_name == 'schedule'
+      run: |
+        # Calculate tomorrow's date
+        TOMORROW=$(date -d "+1 day" +%d)
+        if [ "$TOMORROW" != "01" ]; then
+          echo "Not the last day of the month. Skipping."
+          exit 0
+        fi
+        echo "It is the last day of the month. Proceeding."
 
-      - name: Set up Python
+    - name: Set up Python
       if: success()
       uses: actions/setup-python@v4
       with:
