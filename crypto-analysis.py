@@ -4,6 +4,7 @@ import requests
 import os
 import sys
 import re
+import google.generativeai as genai
 from datetime import datetime, timedelta, timezone
 
 # --- Config ---
@@ -108,7 +109,6 @@ def get_ai_summary(full_report):
         return "No GEMINI_API_KEY found. Skipping AI analysis.", None
 
     try:
-        import google.generativeai as genai
         genai.configure(api_key=GEMINI_API_KEY)
 
         prompt = f"""
