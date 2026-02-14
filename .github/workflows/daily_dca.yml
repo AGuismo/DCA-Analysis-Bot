@@ -113,6 +113,8 @@ jobs:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         DCA_AMOUNT_THB: ${{ inputs.amount || '350' }}
         SYMBOL_THB: ${{ inputs.symbol || 'BTC_THB' }}
+        GIST_ID: ${{ secrets.GIST_ID }}
+        GH_TOKEN: ${{ secrets.GH_PAT_FOR_VARS }} # Use existing PAT or new one
       run: python bitkub-dca.py
 
     - name: Handle Failure (Mark as Done to Skip Retry)

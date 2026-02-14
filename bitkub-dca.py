@@ -6,6 +6,7 @@ import hashlib
 import requests
 import sys
 from datetime import datetime
+from gist_logger import log_trade_to_gist
 
 # --- Configuration ---
 API_KEY = os.environ.get("BITKUB_API_KEY")
@@ -123,6 +124,12 @@ def main():
         
         # Format time
         dt_str = datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
+
+        # Log to Gist (Optional)
+        try:
+            log_trade_to_gist(SYMBOL, spent_thb, received_amt, rate, order_id)
+        except Exception as gist_err:
+            print(f"Gist logging warning: {gist_err}")
 
         msg = (
             f"✅ **DCA Buy Executed!**\n"
