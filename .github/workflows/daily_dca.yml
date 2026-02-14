@@ -32,11 +32,11 @@ jobs:
       if: github.event_name == 'schedule'
       env:
         LAST_BUY_DATE: ${{ vars.LAST_BUY_DATE }}
-        # UTC Offset (e.g. '+7' for BKK). Must match format expected by `date -d`
-        TIMEZONE_OFFSET: ${{ vars.TIMEZONE_OFFSET || '+7' }} 
+        # Use IANA Timezone name (e.g. Asia/Bangkok)
+        TIMEZONE: ${{ vars.TIMEZONE || 'Asia/Bangkok' }} 
       run: |
-        # Get Current Date in Local Time
-        TODAY_LOCAL=$(date -d "$TIMEZONE_OFFSET hours" +%Y-%m-%d)
+        # Get Current Date in Local Time using standard TZ variable
+        TODAY_LOCAL=$(TZ=$TIMEZONE date +%Y-%m-%d)
         
         echo "Today (Local): $TODAY_LOCAL"
         echo "Last Buy:      $LAST_BUY_DATE"
@@ -56,16 +56,15 @@ jobs:
       env:
         # Defaults to 14:45 if variable not set
         TARGET_TIME_LOCAL: ${{ vars.DCA_TARGET_TIME || '14:45' }}
-        TIMEZONE_OFFSET: ${{ vars.TIMEZONE_OFFSET || '+7' }}
+        TIMEZONE: ${{ vars.TIMEZONE || 'Asia/Bangkok' }}
       run: |
         # 1. Parse Target Hour:Minute
         TARGET_HH=$(echo $TARGET_TIME_LOCAL | cut -d: -f1)
         TARGET_MM=$(echo $TARGET_TIME_LOCAL | cut -d: -f2)
 
-        # 2. Get Current Local Time (via Offset)
-        # We use date calculation to handle day rollover if needed
+        # 2. Get Current Local Time (via TZ)
         # Format: HHMM (e.g., 1445)
-        NOW_LOCAL_HHMM=$(date -d "$TIMEZONE_OFFSET hours" +%H%M)
+        NOW_LOCAL_HHMM=$(TZ=$TIMEZONE date +%H%M)
         TARGET_HHMM="${TARGET_HH}${TARGET_MM}"
         
         echo "Target Local: $TARGET_HHMM"
@@ -120,18 +119,18 @@ jobs:
       if: steps.trade_execution.outcome == 'failure'
       env:
         GH_TOKEN: ${{ secrets.GH_PAT_FOR_VARS }}
-        TIMEZONE_OFFSET: ${{ vars.TIMEZONE_OFFSET || '+7' }}
+        TIMEZONE: ${{ vars.TIMEZONE || 'Asia/Bangkok' }}
       run: |
         echo "❌ Trade Failed. Marking today as 'done' to prevent retries..."
-        TODAY_LOCAL=$(date -d "$TIMEZONE_OFFSET hours" +%Y-%m-%d)
+        TODAY_LOCAL=$(TZ=$TIMEZONE date +%Y-%m-%d)
         gh variable set LAST_BUY_DATE --body "$TODAY_LOCAL"
 
     - name: Update Last Buy Date (Success Case)
       if: steps.trade_execution.outcome == 'success'
       env:
         GH_TOKEN: ${{ secrets.GH_PAT_FOR_VARS }}
-        TIMEZONE_OFFSET: ${{ vars.TIMEZONE_OFFSET || '+7' }}
+        TIMEZONE: ${{ vars.TIMEZONE || 'Asia/Bangkok' }}
       run: |
-        TODAY_LOCAL=$(date -d "$TIMEZONE_OFFSET hours" +%Y-%m-%d)
+        TODAY_LOCAL=$(TZ=$TIMEZONE date +%Y-%m-%d)
         echo "Updating LAST_BUY_DATE to $TODAY_LOCAL..."
         gh variable set LAST_BUY_DATE --body "$TODAY_LOCAL"

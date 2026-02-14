@@ -46,7 +46,7 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `Variables` -> `New 
 | :--- | :--- | :--- |
 | `DCA_TARGET_TIME` | `12:00` | The HH:MM time to buy (will be auto-updated by the analysis). |
 | `LAST_BUY_DATE` | `1970-01-01` | Tracks the last successful buy date (prevents double buys). |
-| `TIMEZONE_OFFSET` | `+7` | Your UTC offset (e.g., `+7` for Thailand/BKK). |
+| `TIMEZONE` | `Asia/Bangkok` | Your IANA Timezone (e.g., `Asia/Bangkok`, `America/New_York`). |
 
 ### 3. Usage
 
