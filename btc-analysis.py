@@ -6,7 +6,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 
 # --- Config ---
-EXCHANGE_ID = "binance"
+EXCHANGE_ID = os.environ.get("EXCHANGE_ID", "binance")
 SYMBOL = "BTC/USDT"
 TIMEFRAME = "15m"
 LOCAL_TZ = os.environ.get("TIMEZONE", "Asia/Bangkok")

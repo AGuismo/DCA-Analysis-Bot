@@ -27,12 +27,12 @@ pip install ccxt pandas requests
 
 ## Configuration
 
-The script is configured with the following defaults in `btc-analysis.py`:
+The script is configured with the following defaults in `btc-analysis.py`, which can be overridden by environment variables:
 
-- **Exchange**: Binance
-- **Symbol**: BTC/USDT
-- **Timeframe**: 15m (15 minutes)
-- **Timezone**: Asia/Bangkok
+- **Exchange**: `binance` (default) or `EXCHANGE_ID` (e.g., `binanceus` for US users)
+- **Symbol**: `BTC/USDT`
+- **Timeframe**: `15m` (15 minutes)
+- **Timezone**: `Asia/Bangkok` (default) or `TIMEZONE` env var
 - **Lookback Periods**: 7, 15, 30, 60 days
 
 ## Usage
@@ -42,11 +42,14 @@ The script is configured with the following defaults in `btc-analysis.py`:
    **Mac/Linux:**
    ```bash
    export DISCORD_WEBHOOK_URL="your_webhook_url_here"
+   # If running from a US IP address, use binanceus to avoid geo-blocking:
+   export EXCHANGE_ID="binanceus"
    ```
 
    **Windows (PowerShell):**
    ```powershell
    $env:DISCORD_WEBHOOK_URL="your_webhook_url_here"
+   $env:EXCHANGE_ID="binanceus"
    ```
 
 2. Run the script:

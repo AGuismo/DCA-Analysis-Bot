@@ -43,4 +43,6 @@ jobs:
       env:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         TIMEZONE: "Asia/Bangkok"
+        # Use binanceus for GitHub Actions runners (US IP) to avoid 451 errors
+        EXCHANGE_ID: "binanceus"
       run: python btc-analysis.py
