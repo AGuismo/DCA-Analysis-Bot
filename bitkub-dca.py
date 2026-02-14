@@ -96,12 +96,6 @@ def main():
     print(f"Amount: {DCA_AMOUNT} THB")
 
     try:
-        # Check balance first (Optional, but good practice)
-        # balances = bitkub_request("POST", "/api/v3/market/balances")
-        # thb_balance = balances['result']['THB']['available']
-        # if thb_balance < DCA_AMOUNT:
-        #    raise Exception(f"Insufficient THB Balance: {thb_balance}")
-
         # Construct Order
         # MARKET BUY: rat=0, typ=market
         order_payload = {
