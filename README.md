@@ -4,19 +4,44 @@ A Python script that analyzes Bitcoin (BTC/USDT) price data from Binance to dete
 
 ## Features
 
-- **Multi-Period Analysis**: Analyzes data over the last 7, 15, 30, and 60 days.
+- **Multi-Period Analysis**: Analyzes data over the last 14, 30, 45, and 60 days to capture short-term and medium-term trends.
 - **Daily Low Frequency**: Identifies which 15-minute time slot most frequently captures the daily low price.
-- **Optimal DCA Time**: Calculates the best time of day to buy based on the **Harmonic Mean** of prices (DCA price) and the discount relative to the daily average.
-- **AI Analysis**: Uses Google Gemini (Gemini 1.5 Pro) via Google AI Studio API key.
+- **Advanced DCA Metrics**: 
+  - **Median Miss**: Calculates how much you typically "overpay" relative to the absolute daily bottom (Efficiency Metric).
+  - **Win Rate**: Percentage of days where the chosen time bought within 0.5% of the absolute bottom (Consistency Metric).
+- **AI Analysis**: Uses Google Gemini (automatically selects best model: 2.5/2.0 Flash) to interpret data and recommend a specific time.
 - **Discord Integration**: Automatically sends the analysis report to a Discord channel via Webhook.
 
 ## Prerequisites
 
-- Python 3.x
-- `ccxt`
-- `pandas`
-- `requests`
-- `google-generativeai` (for AI analysis)
+- Python 3.9+
+- `pip` packages: `ccxt`, `pandas`, `requests`, `google-generativeai`
+
+## Setup
+
+1. **Clone the repository**
+2. **Install dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. **Set Environment Variables**:
+   - `GEMINI_API_KEY`: Your Google AI Studio API Key.
+   - `DISCORD_WEBHOOK_URL`: (Optional) Webhook for Discord notifications.
+   - `TIMEZONE`: Your local timezone (default: `Asia/Bangkok`).
+   - `EXCHANGE_ID`: `binance` or `binanceus` (default: `binance`).
+
+## GHA Automation
+
+The included GitHub Actions workflow runs the analysis automatically at the end of every month. It includes:
+- **Smart Model Selection**: Prioritizes fast "Flash" models to avoid free-tier rate limits.
+- **Pip Caching**: Speeds up runs by caching dependencies.
+
+## Usage
+
+Run manually:
+```bash
+python3 btc-analysis.py
+```
 
 ## Installation
 
