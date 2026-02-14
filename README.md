@@ -1,6 +1,6 @@
 # DCA Analysis Tool
 
-A Python script that analyzes Bitcoin (BTC/USDT) price data from Binance to determine optimum times for Dollar Cost Averaging (DCA). The analysis is performed based on the `Asia/Bangkok` timezone.
+A Python script that analyzes Bitcoin (BTC/USDT) price data from Binance to determine optimum times for Dollar Cost Averaging (DCA). The analysis timezone is configurable (default: `Asia/Bangkok`).
 
 ## Features
 

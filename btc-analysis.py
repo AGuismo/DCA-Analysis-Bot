@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 EXCHANGE_ID = "binance"
 SYMBOL = "BTC/USDT"
 TIMEFRAME = "15m"
-LOCAL_TZ = "Asia/Bangkok"
+LOCAL_TZ = os.environ.get("TIMEZONE", "Asia/Bangkok")
 PERIODS = [7, 15, 30, 60]  # Analyze these lookback periods
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 

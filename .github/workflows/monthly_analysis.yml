@@ -2,7 +2,7 @@ name: Monthly BTC Analysis
 
 on:
   schedule:
-    # Run at 03:00 UTC (10:00 AM Bangkok) on days 28-31 of every month
+    # Run at 03:00 UTC on days 28-31 of every month
     - cron: '0 3 28-31 * *'
   workflow_dispatch:
   push:
@@ -42,4 +42,5 @@ jobs:
       if: success()
       env:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        TIMEZONE: "Asia/Bangkok"
       run: python btc-analysis.py
