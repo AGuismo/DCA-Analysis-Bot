@@ -1,103 +1,99 @@
-# DCA Analysis Tool
+# Smart DCA Automation (Analysis + Execution)
 
-A Python script that analyzes Bitcoin (BTC/USDT) price data from Binance to determine optimum times for Dollar Cost Averaging (DCA). The analysis timezone is configurable (default: `Asia/Bangkok`).
+A complete system that automatically analyzes market data to find the best time of day to buy, and then executes that trade on **Bitkub** (Thai Exchange) automatically.
+
+The system consists of two parts:
+1.  **The Analyst (`crypto-analysis.py`)**: Runs every 2 days (06:00 BKK). Checks the last 30 days of price action to find the "Champion Time" (lowest median absolute miss). It updates a repository variable `DCA_TARGET_TIME`.
+2.  **The Trader (`bitkub-dca.py`)**: Runs every 15 minutes. It checks if the current time matches the `DCA_TARGET_TIME` and if it hasn't bought yet today. If matched, it buys a fixed THB amount on Bitkub.
 
 ## Features
 
-- **Multi-Period Analysis**: Analyzes data over the last 14, 30, 45, and 60 days to capture short-term and medium-term trends.
-- **Daily Low Frequency**: Identifies which 15-minute time slot most frequently captures the daily low price.
-- **Advanced DCA Metrics**: 
-  - **Median Miss**: Calculates how much you typically "overpay" relative to the absolute daily bottom (Efficiency Metric).
-  - **Win Rate**: Percentage of days where the chosen time bought within 0.5% of the absolute bottom (Consistency Metric).
-- **AI Analysis**: Uses Google Gemini (automatically selects best model: 2.5/2.0 Flash) to interpret data and recommend a specific time.
-- **Discord Integration**: Automatically sends the analysis report to a Discord channel via Webhook.
+- **Self-Optimizing**: The buy time adjusts automatically based on recent market behavior (e.g., if dips shift from 07:00 to 14:00, the bot follows).
+- **Cost Efficient**: GitHub Actions logic uses `bash` for time-checking to minimize billable runtime minutes (~165 mins/month).
+- **Safety Locks**:
+  - **Once-Per-Day**: Uses a `LAST_BUY_DATE` variable to ensure it never double-buys on the same day.
+  - **Time Window**: Only triggers execution within 7 minutes of the target time.
+- **Smart Metrics**: 
+  - **Median Miss**: Calculates efficiency (how close to the exact daily bottom?).
+  - **Win Rate**: Calculates consistency (% of days hitting the bottom).
+- **AI Analysis**: Gemini (2.5 Flash) provides a daily summary of *why* that time was chosen.
+- **Discord Integration**: Get reports and trade confirmations directly to your channel.
 
 ## Prerequisites
 
-- Python 3.9+
-- `pip` packages: `ccxt`, `pandas`, `requests`, `google-generativeai`
+- **Bitkub Account**: API Key and Secret (enable "Trade" permission).
+- **Google Gemini API**: For AI summaries (Free tier available).
+- **Discord Webhook**: For notifications.
+- **GitHub Repository**: To host the Actions.
 
-## Setup
+## Setup & Installation
 
-1. **Clone the repository**
-2. **Install dependencies**:
+### 1. Secrets (Secure Storage)
+Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository secret`:
+
+| Secret Name | Value Description |
+| :--- | :--- |
+| `BITKUB_API_KEY` | Your Bitkub API Key. |
+| `BITKUB_API_SECRET` | Your Bitkub API Secret. |
+| `GEMINI_API_KEY` | Google AI Studio Key. |
+| `DISCORD_WEBHOOK_URL` | Your Discord Webhook URL. |
+| `GH_PAT_FOR_VARS` | Personal Access Token (Classic) with `repo` scope. Needed to update variables automatically. |
+
+### 2. Variables (State Management)
+Go to `Settings` -> `Secrets and variables` -> `Actions` -> `Variables` -> `New repository variable`:
+
+| Variable Name | Initial Value | Description |
+| :--- | :--- | :--- |
+| `DCA_TARGET_TIME` | `12:00` | The HH:MM time to buy (will be auto-updated by the analysis). |
+| `LAST_BUY_DATE` | `1970-01-01` | Tracks the last successful buy date (prevents double buys). |
+| `TIMEZONE_OFFSET` | `+7` | Your UTC offset (e.g., `+7` for Thailand/BKK). |
+
+### 3. Usage
+
+The system runs entirely on GitHub Actions:
+
+- **Analysis Workflow**: Runs every 2 days at 06:00 BKK (23:00 UTC previous day). It finds the best time and updates `DCA_TARGET_TIME`.
+- **DCA Workflow**: Runs every 15 minutes. It reads `DCA_TARGET_TIME` and buys if the time is right.
+
+**Manual Interaction:**
+- You can manually trigger the "Crypto Analysis (Every 48h)" workflow from the Actions tab to force an analysis update.
+- You can manually trigger the "Daily Bitkub DCA" workflow with `force_run: true` to buy immediately (bypassing time/date checks).
+
+## Local Development (Optional)
+
+If you want to run scripts locally:
+
+1. **Install dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
-3. **Set Environment Variables**:
-   - `GEMINI_API_KEY`: Your Google AI Studio API Key.
-   - `DISCORD_WEBHOOK_URL`: (Optional) Webhook for Discord notifications.
-   - `TIMEZONE`: Your local timezone (default: `Asia/Bangkok`).
-   - `EXCHANGE_ID`: `binance` or `binanceus` (default: `binance`).
 
-## GHA Automation
-
-The included GitHub Actions workflow runs the analysis automatically at the end of every month. It includes:
-- **Smart Model Selection**: Prioritizes fast "Flash" models to avoid free-tier rate limits.
-- **Pip Caching**: Speeds up runs by caching dependencies.
-
-## Usage
-
-Run manually:
-```bash
-python3 btc-analysis.py
-```
-
-## Installation
-
-1. Clone the repository or download the script.
-2. Install the required dependencies:
-
-```bash
-pip install ccxt pandas requests google-generativeai
-```
-
-## Configuration
-
-The script is configured with the following defaults in `btc-analysis.py`, which can be overridden by environment variables:
-
-- **Exchange**: `binance` (default) or `EXCHANGE_ID` (e.g., `binanceus` for US users)
-- **Symbol**: `BTC/USDT`
-- **Timeframe**: `15m` (15 minutes)
-- **Timezone**: `Asia/Bangkok` (default) or `TIMEZONE` env var
-- **Lookback Periods**: 7, 15, 30, 60 days
-
-## Usage
-
-1. (Optional) Set up the `DISCORD_WEBHOOK_URL` environment variable if you want to receive reports on Discord.
-   
-   **Mac/Linux:**
+2. **Run Analysis**:
    ```bash
-   export DISCORD_WEBHOOK_URL="your_webhook_url_here"
-   # If running from a US IP address, use binanceus to avoid geo-blocking:
-   export EXCHANGE_ID="binanceus"
-   
-   # For AI Analysis (Get key from https://aistudio.google.com/app/apikey)
    export GEMINI_API_KEY="AIza..."
+   python crypto-analysis.py
    ```
 
-   **Windows (PowerShell):**
-   ```powershell
-   $env:DISCORD_WEBHOOK_URL="your_webhook_url_here"
-   $env:EXCHANGE_ID="binanceus"
-   $env:GEMINI_API_KEY="AIza..."
+3. **Run Trader**:
+   ```bash
+   export BITKUB_API_KEY="key"
+   export BITKUB_API_SECRET="secret"
+   export DCA_AMOUNT_THB="500"
+   export SYMBOL_THB="BTC_THB"
+   python bitkub-dca.py
    ```
-
-2. Run the script:
-
-```bash
-python btc-analysis.py
-```
-
-## Output
-
-The script prints a report to the console (and Discord) containing:
-
-1. **Range**: The start and end dates of the analyzed data.
-2. **Most frequent DAILY-LOW time**: The time of day (HH:MM) that has the highest probability of being the daily low.
-3. **Best Realistic DCA Price**: The time of day that offers the best "DCA Price" (harmonic mean of close prices) and the average discount relative to the daily mean.
 
 ## Files
 
-- `btc-analysis.py`: Main analysis script.
-- `*.csv`: (Optional) CSV files that may contain historical data or previous analysis results (not generated by the current script version).
+- `crypto-analysis.py`: Market analysis logic.
+- `bitkub-dca.py`: Trading execution logic.
+- `.github/workflows/crypto-analysis.yml`: Scheduled analysis job.
+- `.github/workflows/daily_dca.yml`: Scheduled trading job.
+
+## Configuration Defaults
+
+- **Analysis**: Defaults to 30-day "Champion" logic.
+- **DCA Amount**: Defaults to 350 THB (minimum Bitkub trade size is usually 10 THB, but higher is safer).
+- **Symbol**: Defaults to `BTC/USDT` (Analysis) and `BTC_THB` (Trading).
+
+

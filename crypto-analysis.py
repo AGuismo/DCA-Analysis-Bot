@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 import os
 import sys
+import re
 from datetime import datetime, timedelta, timezone
 
 # --- Config ---
@@ -104,7 +105,7 @@ def analyze_period(df, days, local_tz):
 
 def get_ai_summary(full_report):
     if not GEMINI_API_KEY:
-        return "No GEMINI_API_KEY found. Skipping AI analysis."
+        return "No GEMINI_API_KEY found. Skipping AI analysis.", None
 
     try:
         import google.generativeai as genai
@@ -119,9 +120,18 @@ def get_ai_summary(full_report):
         - "win_rate": The percentage of days where a buy at this time was within 0.5% (a "snipe") of the absolute daily bottom.
           High win_rate = High consistency.
         
-        Identify the single best time to buy based on the data.
-        Prioritize 'median_miss' (efficiency) and 'win_rate' (reliability).
-        Keep it short (max 10 sentences).
+        TASK:
+        1. Identify the single best time to buy based on the data. Prioritize 'median_miss' (efficiency) and 'win_rate' (reliability).
+        2. Look at the data across different timeframes (14, 30, 45, 60 days). Is the trend shifting?
+        3. OUTPUT A RECOMMENDATION.
+        
+        FORMAT YOUR RESPONSE EXACTLY LIKE THIS (Do not include any other text before or after):
+        RECOMMENDED_TIME: HH:MM
+        REASON: [Short explanation suitable for Discord notification, max 3 sentences]
+
+        EXAMPLE RESPONSE:
+        RECOMMENDED_TIME: 14:30
+        REASON: This time consistently catches the daily low with a 70% win rate and minimal median miss across both 14 and 30 day periods.
         
         Report:
         {full_report}
@@ -146,7 +156,7 @@ def get_ai_summary(full_report):
                 model = genai.GenerativeModel(model_name)
                 response = model.generate_content(prompt)
                 result_text = response.text.strip()
-                break # Success
+                break # Stop after the first successful model
             except Exception as e:
                 last_error = e
                 # creating a short error string to print
@@ -154,11 +164,14 @@ def get_ai_summary(full_report):
                 print(f"  -> Failed: {err_str}...")
         
         if result_text:
-            return result_text
+            # Try to extract the time
+            match = re.search(r"RECOMMENDED_TIME:\s*(\d{2}:\d{2})", result_text)
+            extracted_time = match.group(1) if match else None
+            return result_text, extracted_time
         else:
-            return f"AI Analysis failed after trying all candidates. Last error: {last_error}"
+            return f"AI Analysis failed after trying all candidates. Last error: {last_error}", None
     except Exception as e:
-        return f"AI Analysis failed: {e}"
+        return f"AI Analysis failed: {e}", None
 
 def send_to_discord(report_content):
     if not DISCORD_WEBHOOK_URL:
@@ -207,6 +220,8 @@ def main():
 
     log(f"Timezone: {LOCAL_TZ}")
 
+    best_overall_time = None
+    
     for days in PERIODS:
         log(f"\n{'='*40}")
         log(f" ANALYSIS FOR LAST {days} DAYS")
@@ -214,6 +229,11 @@ def main():
         
         try:
             top_common, top_avg, top_dca, start, end = analyze_period(df, days, LOCAL_TZ)
+            
+            # Capture the best time from the 30-day period
+            if days == 30 and not top_dca.empty:
+                best_overall_time = top_dca.iloc[0]['time']
+                log(f"🏆 CHAMPION TIME (30 Days): {best_overall_time}")
             
             log(f"Range: {start} -> {end}")
             
@@ -232,16 +252,46 @@ def main():
     # After loop, send to discord
     full_report = "\n".join(report_lines)
     
+    final_time = best_overall_time
+    source_method = "Quantitative (30d Median Miss)"
+
     if GEMINI_API_KEY:
         log("\n" + "="*40)
-        log("🤖 AI ANALYSIS (Gemini)")
+        log("🤖 AI ANALYSIS & RECOMMENDATION")
         log("="*40)
-        ai_summary = get_ai_summary(full_report)
+        ai_summary, ai_time = get_ai_summary(full_report)
         log(ai_summary)
-        # Update full_report with new logs
-        full_report = "\n".join(report_lines)
+        
+        if ai_time:
+            log(f"\n✨ AI Recommendation Identified: {ai_time}")
+            if ai_time != final_time:
+                log(f"🔄 Switching target from {final_time} (Math) to {ai_time} (AI)")
+                final_time = ai_time
+                source_method = f"🤖 AI Recommendation"
+            else:
+                log("✅ AI agrees with Quantitative Analysis.")
+                source_method = f"🤝 Consensus (AI + Math)"
+        else:
+            log("⚠️ Could not extract valid time from AI. Sticking to math-based time.")
+
+    # Update full_report with new logs
+    full_report = "\n".join(report_lines)
+    
+    # Add source to the final output for Discord/User
+    log(f"\n🎯 FINAL DECISION: {final_time}")
+    log(f"ℹ️ SOURCE: {source_method}")
+    full_report = "\n".join(report_lines)
 
     send_to_discord(full_report)
+    
+    # Export the best time for GitHub Actions
+    if final_time:
+        # Check if running in GHA
+        if os.environ.get("GITHUB_OUTPUT"):
+            with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                f.write(f"best_time={final_time}\n")
+        else:
+            print(f"DEBUG: Best time {final_time} found (not in GHA).")
 
 if __name__ == "__main__":
     main()

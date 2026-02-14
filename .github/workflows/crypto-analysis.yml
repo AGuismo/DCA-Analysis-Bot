@@ -1,9 +1,9 @@
-name: Monthly BTC Analysis
+name: Crypto Analysis (Every 48h)
 
 on:
   schedule:
-    # Run at 03:00 UTC on the 15th and days 28-31 (to catch end of month)
-    - cron: '0 3 15,28-31 * *'
+    # Run at 23:00 UTC (06:00 BKK) every 2 days
+    - cron: '0 23 */2 * *'
   workflow_dispatch:
     inputs:
       symbol:
@@ -26,28 +26,13 @@ jobs:
         python-version: '3.9'
         cache: 'pip'
 
-    - name: Check schedule (15th or Last Day)
-      if: github.event_name == 'schedule'
-      run: |
-        TODAY=$(date +%d)
-        TOMORROW=$(date -d "+1 day" +%d)
-        
-        if [ "$TODAY" == "15" ]; then
-          echo "It is the 15th. Proceeding."
-        elif [ "$TOMORROW" == "01" ]; then
-          echo "It is the last day of the month. Proceeding."
-        else
-          echo "Date is $TODAY. Not the 15th or last day. Skipping."
-          exit 0
-        fi
-
     - name: Install dependencies
-      if: success()
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
     - name: Run Analysis
+      id: analysis  # Needed to capture output
       if: success()
       env:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
@@ -56,4 +41,12 @@ jobs:
         # Use binanceus for GitHub Actions runners (US IP) to avoid 451 errors
         EXCHANGE_ID: "binanceus"
         SYMBOL: ${{ inputs.symbol || 'BTC/USDT' }}
-      run: python btc-analysis.py
+      run: python crypto-analysis.py
+
+    - name: Update Repository Variable
+      if: success() && steps.analysis.outputs.best_time != ''
+      env:
+        GH_TOKEN: ${{ secrets.GH_PAT_FOR_VARS }} # Needs a Personal Access Token with repo scope
+      run: |
+        echo "Updating DCA_TARGET_TIME to ${{ steps.analysis.outputs.best_time }}..."
+        gh variable set DCA_TARGET_TIME --body "${{ steps.analysis.outputs.best_time }}"
