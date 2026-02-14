@@ -1,4 +1,4 @@
-name: Crypto Analysis (Every 48h)
+name: Crypto Analysis
 
 on:
   schedule:
