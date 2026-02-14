@@ -10,7 +10,7 @@ EXCHANGE_ID = os.environ.get("EXCHANGE_ID", "binance")
 SYMBOL = "BTC/USDT"
 TIMEFRAME = "15m"
 LOCAL_TZ = os.environ.get("TIMEZONE", "Asia/Bangkok")
-PERIODS = [7, 15, 30, 60]  # Analyze these lookback periods
+PERIODS = [14, 30, 45, 60]  # Focused on short-term market evolution
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
@@ -77,6 +77,10 @@ def analyze_period(df, days, local_tz):
     # How much did we overpay vs the absolute bottom of that specific day?
     daily_min_low = period_df.groupby("local_date")["low"].transform("min")
     period_df["miss_pct"] = (period_df["close"] - daily_min_low) / daily_min_low * 100
+    
+    # NEW: Win Rate (Consistency Metric)
+    # "Win" = Price is within 0.5% (50bps) of the absolute daily low
+    period_df["is_snipe"] = period_df["miss_pct"] < 0.5
 
     # C. Group by time
     dca_group = period_df.groupby("local_time")
@@ -87,9 +91,11 @@ def analyze_period(df, days, local_tz):
 
     dca_stats = dca_group.agg(
         dca_price=("close", harmonic_mean),
-        avg_discount=("diff_from_daily_avg", "mean"),
-        median_miss=("miss_pct", "median")
+        median_miss=("miss_pct", "median"),
+        win_rate=("is_snipe", "mean")
     ).reset_index().rename(columns={"local_time": "time"})
+    
+    dca_stats["win_rate"] = dca_stats["win_rate"] * 100
     
     # Sort by lowest "miss" from the daily bottom (Median is more robust against crash wicks)
     top_dca = dca_stats.sort_values("median_miss", ascending=True).head(5)
@@ -110,9 +116,11 @@ def get_ai_summary(full_report):
         KEY METRIC EXPLANATION:
         - "median_miss": The median percentage difference between the close price at that time and the absolute lowest price of that same day. 
           Example: 0.150000 means "Buying at this time is typically only 0.15% away from the perfect daily bottom."
+        - "win_rate": The percentage of days where a buy at this time was within 0.5% (a "snipe") of the absolute daily bottom.
+          High win_rate = High consistency.
         
         Identify the single best time to buy based on the data.
-        Prioritize 'median_miss' as it represents the most consistent "perfect entry" proxy.
+        Prioritize 'median_miss' (efficiency) and 'win_rate' (reliability).
         Keep it short (max 10 sentences).
         
         Report:
@@ -215,7 +223,8 @@ def main():
             log("\n(2) Best DCA Time (Lowest Median Miss from Daily Low):")
             # Show price and the average discount relative to daily mean
             log(top_dca.to_string(index=False))
-            log("* 'median_miss': Median % overpayment vs that day's absolute low.")
+            log("* 'median_miss': Median % overpayment vs day's absolute low.")
+            log("* 'win_rate': % of days where the buy was within 0.5% of the absolute low.")
             
         except Exception as e:
             log(f"Could not analyze {days} days: {e}")
