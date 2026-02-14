@@ -2,8 +2,8 @@ name: Monthly BTC Analysis
 
 on:
   schedule:
-    # Run at 03:00 UTC on days 28-31 of every month
-    - cron: '0 3 28-31 * *'
+    # Run at 03:00 UTC on the 15th and days 28-31 (to catch end of month)
+    - cron: '0 3 15,28-31 * *'
   workflow_dispatch:
   push:
     branches: [ "main" ]
@@ -21,16 +21,20 @@ jobs:
         python-version: '3.9'
         cache: 'pip'
 
-    - name: Check if it is the last day of the month
+    - name: Check schedule (15th or Last Day)
       if: github.event_name == 'schedule'
       run: |
-        # Calculate tomorrow's date
+        TODAY=$(date +%d)
         TOMORROW=$(date -d "+1 day" +%d)
-        if [ "$TOMORROW" != "01" ]; then
-          echo "Not the last day of the month. Skipping."
+        
+        if [ "$TODAY" == "15" ]; then
+          echo "It is the 15th. Proceeding."
+        elif [ "$TOMORROW" == "01" ]; then
+          echo "It is the last day of the month. Proceeding."
+        else
+          echo "Date is $TODAY. Not the 15th or last day. Skipping."
           exit 0
         fi
-        echo "It is the last day of the month. Proceeding."
 
     - name: Install dependencies
       if: success()
