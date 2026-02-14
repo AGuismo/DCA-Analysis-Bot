@@ -7,6 +7,7 @@ A Python script that analyzes Bitcoin (BTC/USDT) price data from Binance to dete
 - **Multi-Period Analysis**: Analyzes data over the last 7, 15, 30, and 60 days.
 - **Daily Low Frequency**: Identifies which 15-minute time slot most frequently captures the daily low price.
 - **Optimal DCA Time**: Calculates the best time of day to buy based on the **Harmonic Mean** of prices (DCA price) and the discount relative to the daily average.
+- **AI Analysis**: Uses Google Gemini (Gemini 1.5 Pro) via Google AI Studio API key.
 - **Discord Integration**: Automatically sends the analysis report to a Discord channel via Webhook.
 
 ## Prerequisites
@@ -15,6 +16,7 @@ A Python script that analyzes Bitcoin (BTC/USDT) price data from Binance to dete
 - `ccxt`
 - `pandas`
 - `requests`
+- `google-generativeai` (for AI analysis)
 
 ## Installation
 
@@ -22,7 +24,7 @@ A Python script that analyzes Bitcoin (BTC/USDT) price data from Binance to dete
 2. Install the required dependencies:
 
 ```bash
-pip install ccxt pandas requests
+pip install ccxt pandas requests google-generativeai
 ```
 
 ## Configuration
@@ -44,12 +46,16 @@ The script is configured with the following defaults in `btc-analysis.py`, which
    export DISCORD_WEBHOOK_URL="your_webhook_url_here"
    # If running from a US IP address, use binanceus to avoid geo-blocking:
    export EXCHANGE_ID="binanceus"
+   
+   # For AI Analysis (Get key from https://aistudio.google.com/app/apikey)
+   export GEMINI_API_KEY="AIza..."
    ```
 
    **Windows (PowerShell):**
    ```powershell
    $env:DISCORD_WEBHOOK_URL="your_webhook_url_here"
    $env:EXCHANGE_ID="binanceus"
+   $env:GEMINI_API_KEY="AIza..."
    ```
 
 2. Run the script:

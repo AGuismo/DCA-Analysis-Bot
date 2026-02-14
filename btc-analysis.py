@@ -12,6 +12,7 @@ TIMEFRAME = "15m"
 LOCAL_TZ = os.environ.get("TIMEZONE", "Asia/Bangkok")
 PERIODS = [7, 15, 30, 60]  # Analyze these lookback periods
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 # --- Fetch helper ---
 def fetch_ohlcv_last_n_days(exchange, symbol, timeframe, days):
@@ -89,6 +90,56 @@ def analyze_period(df, days, local_tz):
 
     return top_common, top_avg, top_dca, period_df["ts"].min(), period_df["ts"].max()
 
+def get_ai_summary(full_report):
+    if not GEMINI_API_KEY:
+        return "No GEMINI_API_KEY found. Skipping AI analysis."
+
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=GEMINI_API_KEY)
+
+        prompt = f"""
+        You are a crypto trading analyst. Analyze the following DCA report for BTC/USDT.
+        Identify the single best time to buy based on the data.
+        Keep it short (max 10 sentences).
+        
+        Report:
+        {full_report}
+        """
+        
+        # Try a list of models in order of preference (Best -> Fastest/Standard)
+        # Updates frequently, so falling back is good practice for scripts.
+        candidates = [
+            'gemini-2.5-pro',
+            'gemini-2.5-flash',
+            'gemini-2.0-flash',
+            'gemini-1.5-pro',
+            'gemini-1.5-flash'
+        ]
+
+        result_text = None
+        last_error = None
+
+        for model_name in candidates:
+            try:
+                print(f"Trying AI model: {model_name}...")
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content(prompt)
+                result_text = response.text.strip()
+                break # Success
+            except Exception as e:
+                last_error = e
+                # creating a short error string to print
+                err_str = str(e).split('\n')[0] 
+                print(f"  -> Failed: {err_str}...")
+        
+        if result_text:
+            return result_text
+        else:
+            return f"AI Analysis failed after trying all candidates. Last error: {last_error}"
+    except Exception as e:
+        return f"AI Analysis failed: {e}"
+
 def send_to_discord(report_content):
     if not DISCORD_WEBHOOK_URL:
         print("No DISCORD_WEBHOOK_URL found. Skipping Discord notification.")
@@ -158,6 +209,16 @@ def main():
 
     # After loop, send to discord
     full_report = "\n".join(report_lines)
+    
+    if GEMINI_API_KEY:
+        log("\n" + "="*40)
+        log("🤖 AI ANALYSIS (Gemini)")
+        log("="*40)
+        ai_summary = get_ai_summary(full_report)
+        log(ai_summary)
+        # Update full_report with new logs
+        full_report = "\n".join(report_lines)
+
     send_to_discord(full_report)
 
 if __name__ == "__main__":
