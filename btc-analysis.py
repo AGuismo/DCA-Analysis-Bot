@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 # --- Config ---
 EXCHANGE_ID = os.environ.get("EXCHANGE_ID", "binance")
-SYMBOL = "BTC/USDT"
+SYMBOL = os.environ.get("SYMBOL", "BTC/USDT")
 TIMEFRAME = "15m"
 LOCAL_TZ = os.environ.get("TIMEZONE", "Asia/Bangkok")
 PERIODS = [14, 30, 45, 60]  # Focused on short-term market evolution
@@ -111,7 +111,7 @@ def get_ai_summary(full_report):
         genai.configure(api_key=GEMINI_API_KEY)
 
         prompt = f"""
-        You are a crypto trading analyst. Analyze the following DCA report for BTC/USDT.
+        You are a crypto trading analyst. Analyze the following DCA report for {SYMBOL}.
         
         KEY METRIC EXPLANATION:
         - "median_miss": The median percentage difference between the close price at that time and the absolute lowest price of that same day. 

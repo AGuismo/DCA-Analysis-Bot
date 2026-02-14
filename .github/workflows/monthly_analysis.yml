@@ -5,6 +5,11 @@ on:
     # Run at 03:00 UTC on the 15th and days 28-31 (to catch end of month)
     - cron: '0 3 15,28-31 * *'
   workflow_dispatch:
+    inputs:
+      symbol:
+        description: 'Trading Pair (e.g., BTC/USDT, ETH/USDT)'
+        required: true
+        default: 'BTC/USDT'
   push:
     branches: [ "main" ]
 
@@ -50,4 +55,5 @@ jobs:
         TIMEZONE: "Asia/Bangkok"
         # Use binanceus for GitHub Actions runners (US IP) to avoid 451 errors
         EXCHANGE_ID: "binanceus"
+        SYMBOL: ${{ inputs.symbol || 'BTC/USDT' }}
       run: python btc-analysis.py
