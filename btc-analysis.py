@@ -73,7 +73,12 @@ def analyze_period(df, days, local_tz):
     daily_means = period_df.groupby("local_date")["candle_avg"].transform("mean")
     period_df["diff_from_daily_avg"] = (period_df["close"] - daily_means) / daily_means * 100
 
-    # B. Group by time
+    # B. Calculate "Proximity to Daily Low" (The "Regret" Metric)
+    # How much did we overpay vs the absolute bottom of that specific day?
+    daily_min_low = period_df.groupby("local_date")["low"].transform("min")
+    period_df["miss_pct"] = (period_df["close"] - daily_min_low) / daily_min_low * 100
+
+    # C. Group by time
     dca_group = period_df.groupby("local_time")
 
     # Harmonic Mean function for DCA price
@@ -82,11 +87,12 @@ def analyze_period(df, days, local_tz):
 
     dca_stats = dca_group.agg(
         dca_price=("close", harmonic_mean),
-        avg_discount=("diff_from_daily_avg", "mean")
+        avg_discount=("diff_from_daily_avg", "mean"),
+        median_miss=("miss_pct", "median")
     ).reset_index().rename(columns={"local_time": "time"})
     
-    # Sort by best DCA price (lowest)
-    top_dca = dca_stats.sort_values("dca_price", ascending=True).head(5)
+    # Sort by lowest "miss" from the daily bottom (Median is more robust against crash wicks)
+    top_dca = dca_stats.sort_values("median_miss", ascending=True).head(5)
 
     return top_common, top_avg, top_dca, period_df["ts"].min(), period_df["ts"].max()
 
@@ -100,7 +106,13 @@ def get_ai_summary(full_report):
 
         prompt = f"""
         You are a crypto trading analyst. Analyze the following DCA report for BTC/USDT.
+        
+        KEY METRIC EXPLANATION:
+        - "median_miss": The median percentage difference between the close price at that time and the absolute lowest price of that same day. 
+          Example: 0.150000 means "Buying at this time is typically only 0.15% away from the perfect daily bottom."
+        
         Identify the single best time to buy based on the data.
+        Prioritize 'median_miss' as it represents the most consistent "perfect entry" proxy.
         Keep it short (max 10 sentences).
         
         Report:
@@ -200,9 +212,10 @@ def main():
             log("\n(1) Most frequent DAILY-LOW time:")
             log(top_common.to_string(index=False))
 
-            log("\n(2) Best Realistic DCA Price (Harmonic Mean):")
+            log("\n(2) Best DCA Time (Lowest Median Miss from Daily Low):")
             # Show price and the average discount relative to daily mean
             log(top_dca.to_string(index=False))
+            log("* 'median_miss': Median % overpayment vs that day's absolute low.")
             
         except Exception as e:
             log(f"Could not analyze {days} days: {e}")
