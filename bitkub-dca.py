@@ -58,17 +58,8 @@ def bitkub_request(method, endpoint, payload=None):
     payload_str = json.dumps(payload, separators=(',', ':')) if payload else ''
     
     # 3. Create Signature
-    # Standard Bitkub V3 Signature
-    # Message = timestamp + method + path + body
-    # Note: path includes query string if any
-    
-    path = endpoint
-    if method == "GET" and payload:
-        # For GET, payload is query params
-        # (This script doesn't use GET currently, but for robustness)
-        pass # Not implemented fully as we only create orders (POST)
-    
-    sig_message = f"{ts}{method}{path}{payload_str}"
+    # Message: timestamp + method + endpoint + payload
+    sig_message = f"{ts}{method}{endpoint}{payload_str}"
     
     signature = hmac.new(
         API_SECRET.encode('utf-8'),
