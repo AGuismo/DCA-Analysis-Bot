@@ -121,13 +121,16 @@ def get_ai_summary(full_report):
           High win_rate = High consistency.
         
         TASK:
-        1. Identify the single best time to buy based on the data. Prioritize 'median_miss' (efficiency) and 'win_rate' (reliability).
-        2. Look at the data across different timeframes (14, 30, 45, 60 days). Is the trend shifting?
-        3. OUTPUT A RECOMMENDATION.
+        1. Identify the single best time to buy.
+        2. APPLY THIS DECISION LOGIC:
+           - RECENCY BIAS: If a time slot has a significantly better 'win_rate' (>10% higher) in the 14-day data compared to the 30/60-day data, FAVOR the 14-day time (Market is shifting).
+           - STABILITY: If the 14-day data is noisy (low win rates across the board), sticking to the 30-day or 60-day winner is safer.
+           - CONSISTENCY: A time that appears in the top 5 across MULTIPLE timeframes is a strong candidate.
+        3. OUTPUT A RECOMMENDED TIME.
         
         FORMAT YOUR RESPONSE EXACTLY LIKE THIS (Do not include any other text before or after):
         RECOMMENDED_TIME: HH:MM
-        REASON: [Short explanation suitable for Discord notification, max 3 sentences]
+        REASON: [Short explanation suitable for Discord notification, max 3 sentences. Mention which timeframe influenced the decision.]
 
         EXAMPLE RESPONSE:
         RECOMMENDED_TIME: 14:30

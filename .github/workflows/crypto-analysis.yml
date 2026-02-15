@@ -2,8 +2,8 @@ name: Crypto Analysis
 
 on:
   schedule:
-    # Run at 23:00 UTC (06:00 BKK) every 2 days
-    - cron: '0 23 */2 * *'
+    # Run at 23:00 UTC (06:00 BKK) every day
+    - cron: '0 23 * * *'
   workflow_dispatch:
     inputs:
       symbol:
