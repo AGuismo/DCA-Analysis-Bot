@@ -143,9 +143,10 @@ def get_ai_summary(full_report):
         # Try a list of models in order of preference (Best -> Fastest/Standard)
         # Updates frequently, so falling back is good practice for scripts.
         candidates = [
-            'gemini-1.5-flash',
-            'gemini-1.5-pro',
-            'gemini-pro'
+            'gemini-3-flash-preview',  # Latest reasoning-first model 
+            'gemini-2.5-flash',        # Current workhorse stable model
+            'gemini-2.5-pro',         # High-capability stable model
+            'gemini-2.5-flash-lite'    # Optimized for speed/volume
         ]
 
         result_text = None
