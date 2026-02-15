@@ -105,31 +105,137 @@ def main():
             "typ": "market"
         }
 
-        # Execute
+
+        # Execute Order
         result = bitkub_request('POST', '/api/v3/market/place-bid', order_payload)
         
         # Parse Result
         if result.get('error') != 0:
             raise Exception(f"API returned error code: {result.get('error')}")
 
-        res_data = result.get('result', {})
+        initial_res = result.get('result', {})
+        order_id = initial_res.get('id')
         
-        # Extract details (Bitkub API response structure)
-        spent_thb = res_data.get('spent', DCA_AMOUNT)
-        received_amt = res_data.get('rec', '???')
-        rate = res_data.get('rat', 'Market Price') # Often 0 for market orders in response
-        order_id = res_data.get('id')
-        ts = res_data.get('ts', int(time.time()))
+        # --- FETCH ACTUAL FILL DETAILS ---
+        # The place-bid response doesn't show actual amount received for market orders
+        # We must "wait and check" the order info.
+        time.sleep(3) # Give the engine a moment to match, 3s is safer
+        
+        print(f"Fetching info for Order ID: {order_id}...")
+        
+        info_payload = {
+            "sym": SYMBOL,
+            "id": order_id,
+            "sd": "buy" # side is required
+        }
+        
+        # Bitkub uses a different endpoint for checking specific order status
+        # For V3, it's often GET /api/v3/market/order-info?sym=...&id=...&sd=...
+        # But this script is set up for POST primarily. Let's try POST to order-info 
+        # (Bitkub supports POST for this endpoint too usually, or we adapt)
+        
+        # NOTE: Bitkub API V3 /market/order-info takes query params for GET
+        # Let's adjust bitkub_request to support GET params properly?
+        # Actually simplest is just to use the POST payload if supported, 
+        # BUT standard Bitkub doc says GET.
+        
+        # Let's try to fetch order info via POST which is safer with signature in body
+        # API: /api/v3/market/order-info
+        # V3 says GET, but typically needs query params. Some V3 support POST.
+        # If POST failed with 405 (Method Not Allowed), it means GET is mandatory.
+        # But our bitkub_request function is set up for POST (json body).
+        
+        # We need to construct a GET request with query params and signature.
+        # Let's do it manually here to avoid rewriting the whole bitkub_request function right now.
+        
+        timestamp_for_info = str(get_server_time())
+        query_params = f"sym={SYMBOL}&id={order_id}&sd=buy"
+        
+        # Signature for GET: timestamp + method + endpoint + ? + query_params
+        # Bitkub V3 GET signature is typically: timestamp + method + path + query (without ?)
+        path_with_query = f"/api/v3/market/order-info?{query_params}"
+        
+        sig_msg = f"{timestamp_for_info}GET{path_with_query}"
+        
+        sig_info = hmac.new(
+            API_SECRET.encode('utf-8'),
+            sig_msg.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+        
+        headers_info = {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'X-BTK-APIKEY': API_KEY,
+            'X-BTK-TIMESTAMP': timestamp_for_info,
+            'X-BTK-SIGN': sig_info
+        }
+        
+        url_info = BASE_URL + path_with_query
+        print(f"Sending GET to {url_info}...")
+        
+        order_info_res_raw = requests.get(url_info, headers=headers_info)
+        order_info_res_raw.raise_for_status()
+        order_info_res = order_info_res_raw.json()
+        
+        order_data = order_info_res.get('result', {})
+        
+        # --- PARSE EXECUTION DETAILS CAREFULLY ---
+        # Bitkub "order-info" for Market Buy:
+        # 'first' = Initial THB amount requested
+        # 'filled' = Total THB amount successfully matched (SPENT)
+        # 'history' = Array of trades. Each has 'amount' (Crypto received) and 'rate'.
+        
+        spent_thb = float(order_data.get('filled', 0))
+        if spent_thb == 0:
+             # Fallback if 'filled' is 0 (unlikely for market buy unless failed immediately)
+             spent_thb = float(order_data.get('total', 0))
+
+        # Calculate received Amount from history
+        history = order_data.get('history', [])
+        received_amt = 0.0
+        
+        if history:
+            for trade in history:
+                trade_amt = float(trade.get('amount', 0))
+                trade_rate = float(trade.get('rate', 0))
+                # For BUY orders, Bitkub returns 'amount' in THB (Quote currency) for Market Bids
+                # We need to calculate Crypto received: THB / Rate
+                if trade_rate > 0:
+                    received_amt += trade_amt / trade_rate
+                else:
+                    # Fallback or invalid rate
+                    pass
+        else:
+             # Fallback: sometimes 'amount' in top level might be crypto if type is limit sell, 
+             # but for market buy it is THB.
+             # If no history, we might have failed to match yet.
+             pass
+
+        # Calculate average rate
+        if received_amt > 0:
+            rate = spent_thb / received_amt
+        else:
+            rate = 0
+
+        # Timestamp from THIS response (execution time)
+        ts = int(order_info_res.get('result', {}).get('ts', time.time()))
         
         # Format time
         dt_str = datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
 
+        # Log to Gist (Optional)
+        try:
+            log_trade_to_gist(SYMBOL, spent_thb, received_amt, rate, order_id)
+        except Exception as gist_err:
+            print(f"Gist logging warning: {gist_err}")
+
         msg = (
             f"✅ **DCA Buy Executed!**\n"
             f"🔹 **Pair:** {SYMBOL}\n"
-            f"💰 **Spent:** {spent_thb} THB\n"
-            f"📥 **Received:** {received_amt} {SYMBOL.split('_')[0]}\n"
-            f"🏷️ **Rate:** {rate}\n"
+            f"💰 **Spent:** {spent_thb:.2f} THB\n"
+            f"📥 **Received:** {received_amt:.8f} {SYMBOL.split('_')[0]}\n"
+            f"🏷️ **Rate:** {rate:,.2f} THB\n"
             f"🕒 **Time:** {dt_str}\n"
             f"🆔 **Order ID:** {order_id}"
         )
