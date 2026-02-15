@@ -11,7 +11,7 @@ on:
       amount:
         description: 'Amount in THB'
         required: true
-        default: '250'
+        default: '200'
       symbol:
         description: 'Symbol (e.g. BTC_THB)'
         required: true
