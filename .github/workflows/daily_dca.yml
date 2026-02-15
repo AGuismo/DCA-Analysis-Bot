@@ -81,8 +81,8 @@ jobs:
         # Absolute value
         DIFF=${DIFF#-}
 
-        # Threshold: 7 minutes (since we run every 15, closest is <7.5)
-        if [ "$DIFF" -le 7 ]; then
+        # Threshold: 10 minutes
+        if [ "$DIFF" -le 10 ]; then
           echo "✅ MATCH! Within matched window."
           echo "match=true" >> $GITHUB_OUTPUT
         else
