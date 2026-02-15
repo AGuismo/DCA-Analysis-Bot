@@ -7,19 +7,31 @@ GIST_ID = os.environ.get("GIST_ID")
 GIST_TOKEN = os.environ.get("GIST_TOKEN") 
 
 def get_thb_usd_rate():
+    # Try primary source (Frankfurter)
     try:
-        # Fetch current USD/THB rate (free from various APIs, using frankfurter here for simplicity and freedom)
-        # 1 USD = X THB. So 1 THB = 1/X USD.
-        # Frankfurt API is free. https://api.frankfurter.app/latest?from=THB&to=USD
         url = "https://api.frankfurter.app/latest?from=THB&to=USD"
         r = requests.get(url, timeout=5)
+        # Frankfurt might return empty if closed market but usually returns last rate.
         data = r.json()
-        return data['rates']['USD']
+        if 'rates' in data and 'USD' in data['rates']:
+            return float(data['rates']['USD'])
     except Exception as e:
-        print(f"Failed to fetch THB/USD rate: {e}")
-        # Fallback approximation if API fails (e.g. 0.028 approx for 35 THB/USD)
-        # checking error is safer than returning 0 resulting in 0 logs
-        return 0.0
+        print(f"Primary FX source failed: {e}")
+
+    # Try secondary source (Open Exchange Rate API)
+    try:
+        url = "https://open.er-api.com/v6/latest/THB"
+        r = requests.get(url, timeout=5)
+        data = r.json()
+        if 'rates' in data and 'USD' in data['rates']:
+             return float(data['rates']['USD'])
+    except Exception as e:
+         print(f"Secondary FX source failed: {e}")
+
+    # Fallback to hardcoded approx (prevent $0.00 logs)
+    # Approx 1 THB = 0.028 USD (Assuming 35.7 THB/USD)
+    print("⚠️ All FX sources failed. Using hardcoded fallback (0.028).")
+    return 0.028
 
 def update_gist_log(trade_data):
     if not GIST_ID or not GIST_TOKEN:
@@ -85,6 +97,10 @@ def update_gist_log(trade_data):
 if __name__ == "__main__":
     # Test execution
     print("Testing Gist Logger...")
+    # Pre-fetch rate to show user what is being used
+    current_rate = get_thb_usd_rate()
+    print(f"Current FX Rate (THB -> USD): {current_rate}")
+
     if not GIST_ID or not GIST_TOKEN:
         print("⚠️  Please set GIST_ID and GIST_TOKEN environment variables to test.")
         print("Example: export GIST_ID='...' && export GIST_TOKEN='...' && python gist_logger.py")
