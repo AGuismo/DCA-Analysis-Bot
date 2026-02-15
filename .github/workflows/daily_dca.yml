@@ -11,7 +11,7 @@ on:
       amount:
         description: 'Amount in THB'
         required: true
-        default: '200'
+        default: '100'
       symbol:
         description: 'Symbol (e.g. BTC_THB)'
         required: true
@@ -34,12 +34,14 @@ jobs:
         LAST_BUY_DATE: ${{ vars.LAST_BUY_DATE }}
         # Use IANA Timezone name (e.g. Asia/Bangkok)
         TIMEZONE: ${{ vars.TIMEZONE || 'Asia/Bangkok' }} 
+        DCA_AMOUNT: ${{ inputs.amount || '100' }}
       run: |
         # Get Current Date in Local Time using standard TZ variable
         TODAY_LOCAL=$(TZ=$TIMEZONE date +%Y-%m-%d)
         
         echo "Today (Local): $TODAY_LOCAL"
         echo "Last Buy:      $LAST_BUY_DATE"
+        echo "Amount:        $DCA_AMOUNT"
         
         if [ "$TODAY_LOCAL" == "$LAST_BUY_DATE" ]; then
           echo "⛔ Already bought today. Skipping."
