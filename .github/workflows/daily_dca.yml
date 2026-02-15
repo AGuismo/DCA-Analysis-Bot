@@ -1,11 +1,8 @@
 name: Daily Bitkub DCA
 
 on:
-  schedule:
-    # Run every 15 minutes to align with 15m candle analysis
-    # This prevents edge cases (e.g. target 14:30 vs run 14:20/14:40)
-    # Billing Impact: ~480 mins/month (well within free tier)
-    - cron: '*/15 * * * *'
+  push:
+    branches: [ "main" ]
   workflow_dispatch:
     inputs:
       amount:
@@ -16,10 +13,6 @@ on:
         description: 'Symbol (e.g. BTC_THB)'
         required: true
         default: 'BTC_THB'
-      force_run:
-        description: 'Set true to bypass time check'
-        type: boolean
-        default: false
 
 jobs:
   trade:
@@ -28,8 +21,6 @@ jobs:
     steps:
     - name: Safety Check (Once Per Day)
       id: safety_check
-      # Skip check if manual force run
-      if: github.event_name == 'schedule'
       env:
         LAST_BUY_DATE: ${{ vars.LAST_BUY_DATE }}
         # Use IANA Timezone name (e.g. Asia/Bangkok)
@@ -47,14 +38,14 @@ jobs:
           echo "⛔ Already bought today. Skipping."
           echo "safe_to_run=false" >> $GITHUB_OUTPUT
         else
-          echo "✅ New day detected. Proceeding to time check."
+          echo "✅ New day detected. Proceeding."
           echo "safe_to_run=true" >> $GITHUB_OUTPUT
         fi
 
     - name: Check Time Window (Bash)
       id: check_time
-      # Only run if manual force OR safety check passes
-      if: github.event_name == 'workflow_dispatch' || steps.safety_check.outputs.safe_to_run == 'true'
+      # Only run if safety check passed
+      if: steps.safety_check.outputs.safe_to_run == 'true'
       env:
         # Defaults to 14:45 if variable not set
         TARGET_TIME_LOCAL: ${{ vars.DCA_TARGET_TIME || '14:45' }}
@@ -92,28 +83,28 @@ jobs:
 
     - uses: actions/checkout@v3
       # Only download repo if we are running!
-      if: github.event_name == 'workflow_dispatch' || steps.check_time.outputs.match == 'true'
+      if: steps.check_time.outputs.match == 'true'
 
     - name: Set up Python
-      if: github.event_name == 'workflow_dispatch' || steps.check_time.outputs.match == 'true'
+      if: steps.check_time.outputs.match == 'true'
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
         cache: 'pip'
 
     - name: Install dependencies
-      if: github.event_name == 'workflow_dispatch' || steps.check_time.outputs.match == 'true'
+      if: steps.check_time.outputs.match == 'true'
       run: pip install requests
 
     - name: Run DCA Script
-      if: github.event_name == 'workflow_dispatch' || steps.check_time.outputs.match == 'true'
+      if: steps.check_time.outputs.match == 'true'
       id: trade_execution
       continue-on-error: true # Allow this step to fail so we can handle it
       env:
         BITKUB_API_KEY: ${{ secrets.BITKUB_API_KEY }}
         BITKUB_API_SECRET: ${{ secrets.BITKUB_API_SECRET }}
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        DCA_AMOUNT_THB: ${{ inputs.amount || '350' }}
+        DCA_AMOUNT_THB: ${{ inputs.amount || '100' }}
         SYMBOL_THB: ${{ inputs.symbol || 'BTC_THB' }}
       run: python bitkub-dca.py
 

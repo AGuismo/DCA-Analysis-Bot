@@ -106,7 +106,7 @@ def analyze_period(df, days, local_tz):
 
 def get_ai_summary(full_report):
     if not GEMINI_API_KEY:
-        return "No GEMINI_API_KEY found. Skipping AI analysis.", None
+        return "No GEMINI_API_KEY found. Skipping AI analysis.", None, None
 
     try:
         genai.configure(api_key=GEMINI_API_KEY)
@@ -169,11 +169,11 @@ def get_ai_summary(full_report):
             # Try to extract the time
             match = re.search(r"RECOMMENDED_TIME:\s*(\d{2}:\d{2})", result_text)
             extracted_time = match.group(1) if match else None
-            return result_text, extracted_time
+            return result_text, extracted_time, model_name
         else:
-            return f"AI Analysis failed after trying all candidates. Last error: {last_error}", None
+            return f"AI Analysis failed after trying all candidates. Last error: {last_error}", None, None
     except Exception as e:
-        return f"AI Analysis failed: {e}", None
+        return f"AI Analysis failed: {e}", None, None
 
 def send_to_discord(report_content):
     if not DISCORD_WEBHOOK_URL:
@@ -261,7 +261,11 @@ def main():
         log("\n" + "="*40)
         log("🤖 AI ANALYSIS & RECOMMENDATION")
         log("="*40)
-        ai_summary, ai_time = get_ai_summary(full_report)
+        ai_summary, ai_time, used_model = get_ai_summary(full_report)
+        
+        if used_model:
+            log(f"🧠 Model Used: {used_model}")
+            
         log(ai_summary)
         
         if ai_time:
