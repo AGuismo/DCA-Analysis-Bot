@@ -4,18 +4,19 @@ A complete system that automatically analyzes market data to find the best time 
 
 The system consists of two parts:
 1.  **The Analyst (`crypto-analysis.py`)**: Runs daily (06:00 BKK). Checks the last 30 days of price action to find the "Champion Time" (lowest median absolute miss). It updates a repository variable `DCA_TARGET_TIME`.
-2.  **The Trader (`bitkub-dca.py`)**: Triggered externally via API. It checks if the current time matches the `DCA_TARGET_TIME` (±10 mins) and if it hasn't bought yet today. If matched, it buys a fixed THB amount on Bitkub.
+2.  **The Trader (`bitkub-dca.py`)**: Triggered externally via API. It checks if the current time matches the `DCA_TARGET_TIME` (±10 mins) and if it hasn't bought yet today. If matched, it buys a fixed THB amount on Bitkub and logs the specific details to a private Gist.
 
 ## Features
 
-- **Self-Optimizing**: The buy time adjusts automatically based on recent market behavior (e.g., if dips shift from 07:00 to 14:00, the bot follows).
+- **Self-Optimizing**: The buy time adjusts automatically based on recent market behavior.
 - **Precision Timing**: Uses an external cron trigger to bypass GitHub Actions' scheduling delays.
+- **Private Ledger**: Automatically logs every trade to a private GitHub Gist, including the exact THB spent and the USD value at purchase time.
 - **Safety Locks**:
   - **Once-Per-Day**: Uses a `LAST_BUY_DATE` variable to ensure it never double-buys on the same day.
-  - **Time Window**: Checks if the current time matches the target (±5 mins). Includes "overshoot protection" to buy anyway if triggered late, ensuring no missed days.
+  - **Time Window**: Checks if the current time matches the target (±5 mins). Includes "overshoot protection" to buy anyway if triggered late.
 - **Smart Metrics**: 
-  - **Median Miss**: Calculates efficiency (how close to the exact daily bottom?).
-  - **Win Rate**: Calculates consistency (% of days hitting the bottom).
+  - **Median Miss**: Calculates efficiency.
+  - **Win Rate**: Calculates consistency.
 - **AI Analysis**: Gemini (1.5 Flash/Pro) provides a daily summary of *why* that time was chosen.
 - **Discord Integration**: Get reports and trade confirmations directly to your channel.
 
@@ -24,7 +25,8 @@ The system consists of two parts:
 - **Bitkub Account**: API Key and Secret (enable "Trade" permission).
 - **Google Gemini API**: For AI summaries (Free tier available).
 - **Discord Webhook**: For notifications.
-- **GitHub Repository**: To host the Actions.
+- **GitHub**: Account to host the Actions.
+- **GitHub Gist**: A private gist ID for logging trades.
 
 ## Setup & Installation
 
@@ -37,7 +39,8 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository secr
 | `BITKUB_API_SECRET` | Your Bitkub API Secret. |
 | `GEMINI_API_KEY` | Google AI Studio Key. |
 | `DISCORD_WEBHOOK_URL` | Your Discord Webhook URL. |
-| `GH_PAT_FOR_VARS` | Personal Access Token (Classic) with `repo` scope. Needed to update variables automatically. |
+| `GH_PAT_FOR_VARS` | Personal Access Token (Classic) with `repo` and **`gist`** scope. Used to update variables and write to your log. |
+| `GIST_ID` | The ID of your private Gist (see below). |
 
 ### 2. Variables (State Management)
 Go to `Settings` -> `Secrets and variables` -> `Actions` -> `Variables` -> `New repository variable`:
@@ -48,7 +51,21 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `Variables` -> `New 
 | `LAST_BUY_DATE` | `1970-01-01` | Tracks the last successful buy date (prevents double buys). |
 | `TIMEZONE` | `Asia/Bangkok` | Your IANA Timezone (e.g., `Asia/Bangkok`, `America/New_York`). |
 
-### 3. External Scheduler (Required)
+### 3. Gist Setup (Log Book)
+
+1.  **Create a Gist**: Go to [gist.github.com](https://gist.github.com).
+2.  Create a new Gist (Secret Gist recommended). 
+    - Filename: `dca_log.md` (or anything you like).
+    - Content: Just write "Log Start" or leave it empty.
+3.  **Get ID**: Look at the URL after you save. It will look like: `gist.github.com/username/THIS_LONG_STRING`.
+    - `THIS_LONG_STRING` is your **GIST_ID**.
+    - Add this ID as a secret named `GIST_ID` in your repository.
+4.  **Token Rights**:
+    - The `GH_PAT_FOR_VARS` token you created needs the **`gist`** scope enabled.
+    - Go to GitHub Settings -> Developer Settings -> Tokens (Classic) -> Click your token -> Tick the `gist` box -> Update Token.
+    - If you are using a Fine-grained token, give it "Read and Write" access to "Gists".
+
+### 4. External Scheduler (Required)
 
 Because GitHub Actions' internal scheduler can be unreliable (delayed by 30+ minutes), we use an external service to trigger the trade exactly when we want.
 

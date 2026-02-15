@@ -6,6 +6,7 @@ import hashlib
 import requests
 import sys
 from datetime import datetime
+from gist_logger import update_gist_log
 
 # --- Configuration ---
 API_KEY = os.environ.get("BITKUB_API_KEY")
@@ -22,9 +23,11 @@ def get_server_time():
     """Fetch server timestamp to ensure sync."""
     try:
         r = requests.get(f"{BASE_URL}/api/v3/servertime")
+        # Bitkub returns seconds
         return int(r.text)
     except:
-        return int(time.time() * 1000)
+        # Fallback to local time (seconds)
+        return int(time.time())
 
 def send_discord_alert(message, is_error=False):
     if not DISCORD_WEBHOOK_URL:
@@ -226,7 +229,15 @@ def main():
 
         # Log to Gist (Optional)
         try:
-            log_trade_to_gist(SYMBOL, spent_thb, received_amt, rate, order_id)
+            trade_payload = {
+                "ts": ts,
+                "amount_thb": spent_thb,
+                "price": rate,
+                "amount_btc": received_amt,
+                "usd_rate": 0, # Placeholder, gist_logger will fetch specific FX rate or ignore this
+                "order_id": order_id
+            }
+            update_gist_log(trade_payload)
         except Exception as gist_err:
             print(f"Gist logging warning: {gist_err}")
 

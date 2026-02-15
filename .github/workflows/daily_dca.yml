@@ -106,6 +106,8 @@ jobs:
         BITKUB_API_KEY: ${{ secrets.BITKUB_API_KEY }}
         BITKUB_API_SECRET: ${{ secrets.BITKUB_API_SECRET }}
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        GIST_ID: ${{ secrets.GIST_ID }}
+        GIST_TOKEN: ${{ secrets.GH_PAT_FOR_VARS }}
         DCA_AMOUNT_THB: ${{ inputs.amount || '800' }}
         SYMBOL_THB: ${{ inputs.symbol || 'BTC_THB' }}
       run: python bitkub-dca.py
