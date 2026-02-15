@@ -52,20 +52,21 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `Variables` -> `New 
 
 Because GitHub Actions' internal scheduler can be unreliable (delayed by 30+ minutes), we use an external service to trigger the trade exactly when we want.
 
-**Recommended: Google Cloud Scheduler (Free)**
+**Recommended: cron-job.org (Completely Free, No Credit Card)**
 
 1.  **Create a GitHub `PAT`**: Go to GitHub Settings -> Developer settings -> Personal access tokens -> Tokens (classic). Generate one with `repo` and `workflow` scopes.
-2.  **Go to Google Cloud Scheduler**: Create a Job.
-    *   **Frequency**: Your desired time (e.g. `45 14 * * *` for 14:45).
-    *   **Timezone**: `Asia/Bangkok` (or your local time).
-    *   **Target**: `HTTP`
+2.  **Go to cron-job.org**: Sign up and "Create Cronjob".
     *   **URL**: `https://api.github.com/repos/YOUR_USERNAME/DCA-Analysis/actions/workflows/daily_dca.yml/dispatches`
-    *   **Method**: `POST`
-    *   **Body**: `{"ref":"main"}`
-    *   **Headers**:
-        *   `Authorization`: `Bearer YOUR_GITHUB_PAT`
-        *   `Accept`: `application/vnd.github.v3+json`
-        *   `User-Agent`: `Google-Cloud-Scheduler`
+    *   **Execution Schedule**: Your desired time (e.g. `14:45` daily).
+    *   **Timezone**: `Asia/Bangkok`.
+    *   **Advanced** -> **HTTP Method**: `POST`.
+    *   **Advanced** -> **Request Body**: `{"ref":"main"}`.
+    *   **Advanced** -> **Req. Headers**:
+        ```text
+        Authorization: Bearer YOUR_GITHUB_PAT
+        Accept: application/vnd.github.v3+json
+        User-Agent: CronJobOrg
+        ```
 
 **Alternative: Manual Run**
 - Go to the "Actions" tab in GitHub.
