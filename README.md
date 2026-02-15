@@ -12,7 +12,7 @@ The system consists of two parts:
 - **Precision Timing**: Uses an external cron trigger to bypass GitHub Actions' scheduling delays.
 - **Safety Locks**:
   - **Once-Per-Day**: Uses a `LAST_BUY_DATE` variable to ensure it never double-buys on the same day.
-  - **Time Window**: Only executes if triggered within 10 minutes of the target time.
+  - **Time Window**: Checks if the current time matches the target (±5 mins). Includes "overshoot protection" to buy anyway if triggered late, ensuring no missed days.
 - **Smart Metrics**: 
   - **Median Miss**: Calculates efficiency (how close to the exact daily bottom?).
   - **Win Rate**: Calculates consistency (% of days hitting the bottom).
@@ -71,7 +71,7 @@ Because GitHub Actions' internal scheduler can be unreliable (delayed by 30+ min
 **Alternative: Manual Run**
 - Go to the "Actions" tab in GitHub.
 - Select "Daily Bitkub DCA".
-- Click "Run workflow" -> Enter Amount (Default: 100) -> Run.
+- Click "Run workflow" -> Enter Amount -> Run.
 
 ## Local Development (Optional)
 
@@ -106,7 +106,7 @@ If you want to run scripts locally:
 
 ## Configuration Defaults
 
-- **Analysis**: Defaults to 30-day "Champion" and "Recency" logic (50/50 weight).
+- **Analysis**: Uses Multi-Timeframe (14/30/45/60 days) logic + AI Recommendation to select the optimal time.
 - **Symbol**: Defaults to `BTC/USDT` (Analysis) and `BTC_THB` (Trading).
 
 

@@ -11,7 +11,7 @@ from datetime import datetime
 API_KEY = os.environ.get("BITKUB_API_KEY")
 API_SECRET = os.environ.get("BITKUB_API_SECRET")
 # Amount of THB to spend
-DCA_AMOUNT = float(os.environ.get("DCA_AMOUNT_THB", "350"))
+DCA_AMOUNT = float(os.environ.get("DCA_AMOUNT_THB", "800"))
 # Trading Pair (e.g., BTC_THB)
 SYMBOL = os.environ.get("SYMBOL_THB", "BTC_THB").upper()
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")

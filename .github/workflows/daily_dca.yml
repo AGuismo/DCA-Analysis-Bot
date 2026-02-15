@@ -8,7 +8,7 @@ on:
       amount:
         description: 'Amount in THB'
         required: true
-        default: '100'
+        default: '800'
       symbol:
         description: 'Symbol (e.g. BTC_THB)'
         required: true
@@ -25,7 +25,7 @@ jobs:
         LAST_BUY_DATE: ${{ vars.LAST_BUY_DATE }}
         # Use IANA Timezone name (e.g. Asia/Bangkok)
         TIMEZONE: ${{ vars.TIMEZONE || 'Asia/Bangkok' }} 
-        DCA_AMOUNT: ${{ inputs.amount || '100' }}
+        DCA_AMOUNT: ${{ inputs.amount || '800' }}
       run: |
         # Get Current Date in Local Time using standard TZ variable
         TODAY_LOCAL=$(TZ=$TIMEZONE date +%Y-%m-%d)
@@ -69,15 +69,17 @@ jobs:
         TARGET_MINS=$(( 10#$TARGET_HH * 60 + 10#$TARGET_MM ))
         
         DIFF=$(( NOW_MINS - TARGET_MINS ))
-        # Absolute value
-        DIFF=${DIFF#-}
-
-        # Threshold: 8 minutes
-        if [ "$DIFF" -le 8 ]; then
-          echo "✅ MATCH! Within matched window."
+        
+        # Logic: 
+        # 1. If DIFF is positive (NOW > TARGET), we are late/overshot. BUY.
+        # 2. If DIFF is negative but within 5 mins (e.g. -4), we are close enough. BUY.
+        # 3. If DIFF is less than -5 (too early), WAIT.
+        
+        if [ "$DIFF" -ge -5 ]; then
+          echo "✅ MATCH! Time is reached or passed (Diff: $DIFF mins)."
           echo "match=true" >> $GITHUB_OUTPUT
         else
-          echo "❌ Skipping. Diff is $DIFF minutes."
+          echo "⏳ Too early. Waiting for target time (Diff: $DIFF mins)."
           echo "match=false" >> $GITHUB_OUTPUT
         fi
 
@@ -104,7 +106,7 @@ jobs:
         BITKUB_API_KEY: ${{ secrets.BITKUB_API_KEY }}
         BITKUB_API_SECRET: ${{ secrets.BITKUB_API_SECRET }}
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        DCA_AMOUNT_THB: ${{ inputs.amount || '100' }}
+        DCA_AMOUNT_THB: ${{ inputs.amount || '800' }}
         SYMBOL_THB: ${{ inputs.symbol || 'BTC_THB' }}
       run: python bitkub-dca.py
 
