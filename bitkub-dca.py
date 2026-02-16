@@ -339,7 +339,7 @@ def execute_trade(symbol, amount_thb, map_key=None, target_map=None):
         print(f"   Placed Order ID: {order_id}. Waiting for match...")
         
         # 2. Wait
-        time.sleep(3) 
+        time.sleep(5) 
 
         # 3. Fetch Details
         info_params = f"sym={symbol}&id={order_id}&sd=buy"
