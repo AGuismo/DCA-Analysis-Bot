@@ -6,7 +6,7 @@ import hashlib
 import requests
 import sys
 from datetime import datetime, timedelta
-from gist_logger import update_gist_log
+from gist_logger import update_gist_log, get_thb_usd_rate
 
 # --- Configuration ---
 API_KEY = os.environ.get("BITKUB_API_KEY")
@@ -385,10 +385,15 @@ def execute_trade(symbol, amount_thb, map_key=None, target_map=None):
         }, symbol=base_sym) # Pass "BTC" or "LINK"
 
         # 5. Notify
+        # Calculate USD value
+        fx_rate = get_thb_usd_rate()
+        usd_spent = spent_thb * fx_rate if fx_rate > 0 else 0
+        
         msg = (
             f"✅ **DCA Buy Executed!**\n"
             f"🔹 **Pair:** {symbol}\n"
             f"💰 **Spent:** {spent_thb:.2f} THB\n"
+            f"💵 **Spent (USD):** ${usd_spent:.2f}\n"
             f"📥 **Received:** {received_amt:.8f} {base_sym}\n"
             f"🏷️ **Rate:** {rate:,.2f} THB\n"
             f"🕒 **Time:** {dt_str}\n"
