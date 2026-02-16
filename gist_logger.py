@@ -1,10 +1,21 @@
 import os
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Gist Logging Configuration
 GIST_ID = os.environ.get("GIST_ID")
-GIST_TOKEN = os.environ.get("GIST_TOKEN") 
+GIST_TOKEN = os.environ.get("GIST_TOKEN")
+
+# Timezone Configuration
+TIMEZONE_NAME = os.environ.get("TIMEZONE", "Asia/Bangkok")
+try:
+    from zoneinfo import ZoneInfo
+    SELECTED_TZ = ZoneInfo(TIMEZONE_NAME)
+except ImportError:
+    # Fallback for Python < 3.9 or missing tzdata
+    from datetime import timezone
+    SELECTED_TZ = timezone(timedelta(hours=7))
+    print(f"⚠️ zoneinfo not available. Using UTC+7 offset as fallback for {TIMEZONE_NAME}") 
 
 def get_thb_usd_rate():
     # Try primary source (Frankfurter)
@@ -63,7 +74,7 @@ def update_gist_log(trade_data, symbol="BTC"):
             
         # 2. Format new row
         # | Date | Time | THB Spent | USD Value | Buy Price (THB) | Crypto Recv | Order ID | Logged |
-        ts = datetime.fromtimestamp(trade_data['ts'])
+        ts = datetime.fromtimestamp(trade_data['ts'], tz=SELECTED_TZ)
         date_str = ts.strftime("%Y-%m-%d")
         time_str = ts.strftime("%H:%M")
         
@@ -77,9 +88,10 @@ def update_gist_log(trade_data, symbol="BTC"):
 
         # Check if header exists, if not add it
         header_line = "| Date | Time | THB Spent | USD Value | Buy Price (THB) | Crypto Recv | Order ID | Logged |\n"
+        separator_line = "|---|---|---|---|---|---|---|---|\n"
         
         if "Date" not in current_content:
-            current_content = header_line + current_content
+            current_content = header_line + separator_line + current_content
             
         # Append symbol to crypto amount for clarity (e.g. 0.0001 BTC)
         crypto_val = f"{trade_data['amount_btc']:.8f} {symbol}"
