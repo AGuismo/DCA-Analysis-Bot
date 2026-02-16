@@ -213,6 +213,11 @@ def update_repo_variable(map_key, new_last_buy_date):
     pass 
 
 def save_last_buy_date(target_map, symbol_key, date_str):
+    """
+    Saves LAST_BUY_DATE to GitHub repository variable with retry logic.
+    CRITICAL: This is the primary safeguard against double-buys.
+    If this fails, we raise an exception to fail the workflow loudly.
+    """
     print(f"💾 Saving LAST_BUY_DATE for {symbol_key} as {date_str}...")
     
     # Update local object
@@ -232,46 +237,80 @@ def save_last_buy_date(target_map, symbol_key, date_str):
     # Serialize
     new_json = json.dumps(target_map)
     
-    # Push to GitHub
-    # Requires GIST_TOKEN (which we also used as GH_PAT_FOR_VARS)
+    # Push to GitHub with retry logic
     token = os.environ.get("GIST_TOKEN") 
     if not token:
-        print("⚠️ No GIST_TOKEN found. Cannot update repository variable LAST_BUY_DATE.")
-        return
+        err_msg = "🚨 CRITICAL: No GIST_TOKEN found. Cannot update LAST_BUY_DATE. DOUBLE-BUY RISK!"
+        print(err_msg)
+        send_discord_alert(err_msg, is_error=True)
+        raise RuntimeError(err_msg)
 
-    try:
-        # We use 'gh api' to update the variable which is cleaner than 'gh variable set'
-        # Endpoint: PATCH /repos/{owner}/{repo}/actions/variables/{name}
-        # But we need owner/repo.
-        # Simpler: Use 'gh variable set' if 'gh' is installed and auth'd.
-        # In GHA, we can perform: echo "$TOKEN" | gh auth login --with-token
-        
-        # But wait, the environment might not have 'gh' authenticated with the token yet.
-        # The workflow step usually does not auth 'gh' by default unless using actions/checkout with token?
-        # Actually, we can just use requests against the API if we have the token.
-        
-        # We need the repo name. GHA provides GITHUB_REPOSITORY.
-        repo = os.environ.get("GITHUB_REPOSITORY") # "owner/repo"
-        if not repo:
-             print("⚠️ GITHUB_REPOSITORY env var missing. Cannot update variable.")
-             return
-             
-        url = f"https://api.github.com/repos/{repo}/actions/variables/DCA_TARGET_MAP"
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28"
-        }
-        data = {"name": "DCA_TARGET_MAP", "value": new_json}
-        
-        r = requests.patch(url, headers=headers, json=data, timeout=10)
-        if r.status_code == 204:
-            print("✅ Successfully updated DCA_TARGET_MAP on GitHub.")
-        else:
-            print(f"⚠️ Failed to update variable: {r.status_code} {r.text}")
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    if not repo:
+        err_msg = "🚨 CRITICAL: GITHUB_REPOSITORY env var missing. Cannot update LAST_BUY_DATE. DOUBLE-BUY RISK!"
+        print(err_msg)
+        send_discord_alert(err_msg, is_error=True)
+        raise RuntimeError(err_msg)
+    
+    url = f"https://api.github.com/repos/{repo}/actions/variables/DCA_TARGET_MAP"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28"
+    }
+    data = {"name": "DCA_TARGET_MAP", "value": new_json}
+    
+    # Retry configuration
+    max_retries = 3
+    retry_delays = [1, 3, 5]  # Exponential-ish backoff: 1s, 3s, 5s
+    last_error = None
+    
+    for attempt in range(max_retries):
+        try:
+            print(f"   Attempt {attempt + 1}/{max_retries}...")
+            r = requests.patch(url, headers=headers, json=data, timeout=15)
             
-    except Exception as e:
-        print(f"⚠️ Error updating variable: {e}")
+            if r.status_code == 204:
+                print("✅ Successfully updated DCA_TARGET_MAP on GitHub.")
+                return  # Success!
+            elif r.status_code == 404:
+                # Variable doesn't exist, try to create it
+                print(f"   Variable not found (404). Attempting to create...")
+                create_url = f"https://api.github.com/repos/{repo}/actions/variables"
+                r_create = requests.post(create_url, headers=headers, json=data, timeout=15)
+                if r_create.status_code == 201:
+                    print("✅ Successfully created DCA_TARGET_MAP on GitHub.")
+                    return  # Success!
+                else:
+                    last_error = f"Create failed: {r_create.status_code} {r_create.text}"
+            else:
+                last_error = f"HTTP {r.status_code}: {r.text}"
+                
+        except requests.exceptions.Timeout:
+            last_error = "Request timed out"
+        except requests.exceptions.RequestException as e:
+            last_error = str(e)
+        
+        # If not the last attempt, wait and retry
+        if attempt < max_retries - 1:
+            delay = retry_delays[attempt]
+            print(f"   ⚠️ Failed: {last_error}. Retrying in {delay}s...")
+            time.sleep(delay)
+    
+    # All retries exhausted - CRITICAL FAILURE
+    err_msg = (
+        f"🚨 **CRITICAL: LAST_BUY_DATE UPDATE FAILED** 🚨\n"
+        f"Symbol: {symbol_key}\n"
+        f"Date: {date_str}\n"
+        f"Error: {last_error}\n\n"
+        f"⚠️ **DOUBLE-BUY RISK**: The trade was executed but the safeguard was not updated!\n"
+        f"**ACTION REQUIRED**: Manually set `LAST_BUY_DATE` to `{date_str}` for `{symbol_key}` in GitHub Variables."
+    )
+    print(err_msg)
+    send_discord_alert(err_msg, is_error=True)
+    
+    # Raise exception to fail the workflow loudly
+    raise RuntimeError(f"Failed to update LAST_BUY_DATE after {max_retries} attempts: {last_error}")
 
 def execute_trade(symbol, amount_thb, map_key=None, target_map=None):
     print(f"🚀 Executing DCA Buy for {symbol} ({amount_thb} THB)...")
