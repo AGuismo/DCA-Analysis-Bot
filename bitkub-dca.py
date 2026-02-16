@@ -387,6 +387,16 @@ def execute_trade(symbol, amount_thb, map_key=None, target_map=None):
         # 5. Notify
         # Calculate USD value
         fx_rate = get_thb_usd_rate()
+        
+        if fx_rate == 0:
+            # FX rate fetch failed - send error notification
+            fx_error_msg = (
+                f"⚠️ **FX Rate Fetch Failed**\n"
+                f"Trade executed successfully but USD conversion unavailable.\n"
+                f"All currency exchange API sources failed."
+            )
+            send_discord_alert(fx_error_msg, is_error=True)
+        
         usd_spent = spent_thb * fx_rate if fx_rate > 0 else 0
         
         msg = (

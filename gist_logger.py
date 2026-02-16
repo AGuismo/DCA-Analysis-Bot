@@ -39,10 +39,9 @@ def get_thb_usd_rate():
     except Exception as e:
          print(f"Secondary FX source failed: {e}")
 
-    # Fallback to hardcoded approx (prevent $0.00 logs)
-    # Approx 1 THB = 0.028 USD (Assuming 35.7 THB/USD)
-    print("⚠️ All FX sources failed. Using hardcoded fallback (0.028).")
-    return 0.028
+    # All sources failed - return 0
+    print("❌ ERROR: All FX rate sources failed. USD values will be unavailable.")
+    return 0.0
 
 def update_gist_log(trade_data, symbol="BTC"):
     if not GIST_ID or not GIST_TOKEN:
