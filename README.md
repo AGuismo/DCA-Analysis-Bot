@@ -47,7 +47,7 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository vari
 **Trader Workflow (`daily_dca.yml`)**:
 - **Trigger**: Push to main or manual dispatch
 - **Concurrency**: Only one trade workflow runs at a time (queued, not cancelled)
-- **Pre-Check**: Bash script filters symbols before running Python
+- **Pre-Check**: Bash Quick Check runs first (no checkout/Python needed). Only checks out code and installs dependencies if a trade is needed
 - **Safeguards**: Multiple layers check `BUY_ENABLED`, `LAST_BUY_DATE`, and time window
 
 ## How It Works
@@ -61,13 +61,14 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository vari
 
 ### Trade Execution Cycle
 1. Workflow triggers (push/manual)
-2. **Bash Quick Check**: Filters by `BUY_ENABLED`, `LAST_BUY_DATE`, time window
-3. If match found → Install deps → Run Python
-4. **Python**: Validates time window (±5 min or catch-up), checks `LAST_BUY_DATE`
-5. Places market bid order (waits 5 seconds for fill)
-6. Fetches THB→USD exchange rate for logging
-7. Logs to Gist with USD conversion, sends Discord alert with THB and USD amounts
-8. Updates `LAST_BUY_DATE` with 3 retries (fails loudly on error)
+2. **Bash Quick Check** (no checkout/Python required): Filters by `BUY_ENABLED`, `LAST_BUY_DATE`, time window
+3. If no match → Workflow ends (fast exit, no resources used)
+4. If match found → Checkout repo → Setup Python → Install deps → Run Python
+5. **Python**: Validates time window (±5 min or catch-up), checks `LAST_BUY_DATE`
+6. Places market bid order (waits 5 seconds for fill)
+7. Fetches THB→USD exchange rate for logging
+8. Logs to Gist with USD conversion, sends Discord alert with THB and USD amounts
+9. Updates `LAST_BUY_DATE` with 3 retries (fails loudly on error)
 
 ## Currency Conversion
 

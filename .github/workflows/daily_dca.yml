@@ -15,14 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v3
-
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
-        cache: 'pip'
-
+    # Quick Check runs FIRST - no checkout or Python needed (pure bash + env vars)
     - name: Quick Check
       id: check
       shell: bash
@@ -97,11 +90,20 @@ jobs:
         
         echo "should_run=$SHOULD_RUN" >> $GITHUB_OUTPUT
 
+    - name: Checkout repository
+      if: steps.check.outputs.should_run == 'true'
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      if: steps.check.outputs.should_run == 'true'
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+        cache: 'pip'
+
     - name: Install dependencies
       if: steps.check.outputs.should_run == 'true'
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+      run: pip install --upgrade pip && pip install -r requirements.txt
 
     - name: Run DCA Trader
       if: steps.check.outputs.should_run == 'true'
