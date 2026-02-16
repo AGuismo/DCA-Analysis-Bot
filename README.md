@@ -45,10 +45,11 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository vari
 - **Environment**: Uses `binanceus` exchange to avoid geo-restrictions
 
 **Trader Workflow (`daily_dca.yml`)**:
-- **Trigger**: Push to main or manual dispatch
+- **Trigger**: **Manual dispatch ONLY** (no automatic cron schedule by design). Triggered via GitHub Actions UI or workflow_dispatch API
 - **Concurrency**: Only one trade workflow runs at a time (queued, not cancelled)
 - **Pre-Check**: Bash Quick Check runs first (no checkout/Python needed). Only checks out code and installs dependencies if a trade is needed
 - **Safeguards**: Multiple layers check `BUY_ENABLED`, `LAST_BUY_DATE`, and time window
+- **Rationale**: Manual dispatch gives you full control over when trades execute. Analysis updates DCA_TARGET_MAP daily, but you decide when to run the trader
 
 ## How It Works
 
@@ -60,7 +61,7 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository vari
 5. Updates `DCA_TARGET_MAP["BTC_THB"]["TIME"]` with optimal buy time
 
 ### Trade Execution Cycle
-1. Workflow triggers (push/manual)
+1. **Manual trigger** via GitHub Actions UI (Actions tab → Daily Crypto DCA → Run workflow) or workflow_dispatch API call
 2. **Bash Quick Check** (no checkout/Python required): Filters by `BUY_ENABLED`, `LAST_BUY_DATE`, time window
 3. If no match → Workflow ends (fast exit, no resources used)
 4. If match found → Checkout repo → Setup Python → Install deps → Run Python
@@ -69,6 +70,8 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository vari
 7. Fetches THB→USD exchange rate for logging
 8. Logs to Gist with USD conversion, sends Discord alert with THB and USD amounts
 9. Updates `LAST_BUY_DATE` with 3 retries (fails loudly on error)
+
+**Why Manual Dispatch?**: The system intentionally has NO automatic cron schedule on the trader workflow. This gives you complete control over trade execution timing. While analysis runs daily to update optimal buy times, you decide when to actually execute trades.
 
 ## Currency Conversion
 
