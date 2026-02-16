@@ -5,33 +5,42 @@ import hmac
 import hashlib
 import requests
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from gist_logger import update_gist_log
+
+try:
+    from zoneinfo import ZoneInfo
+    TZ_BKK = ZoneInfo("Asia/Bangkok")
+except ImportError:
+    from datetime import timezone
+    TZ_BKK = timezone(timedelta(hours=7))
 
 # --- Configuration ---
 API_KEY = os.environ.get("BITKUB_API_KEY")
 API_SECRET = os.environ.get("BITKUB_API_SECRET")
-# Amount of THB to spend
-DCA_AMOUNT = float(os.environ.get("DCA_AMOUNT_THB", "800"))
-# Trading Pair (e.g., BTC_THB)
-SYMBOL = os.environ.get("SYMBOL_THB", "BTC_THB").upper()
-DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 
+# Default settings (fallback)
+DEFAULT_DCA_AMOUNT = 20.0 # Default trade amount if missing in JSON
+DEFAULT_TARGET_TIME = os.environ.get("DCA_TARGET_TIME", "07:00")
+
+# Target Map (JSON String)
+# New Format: {"BTC_THB": {"TIME": "07:00", "AMOUNT": 800, "BUY_ENABLED": true, "LAST_BUY_DATE": ""}}
+DCA_TARGET_MAP_JSON = os.environ.get("DCA_TARGET_MAP", "{}")
+
+DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 BASE_URL = "https://api.bitkub.com"
 
 def get_server_time():
     """Fetch server timestamp to ensure sync."""
     try:
-        r = requests.get(f"{BASE_URL}/api/v3/servertime")
-        # Bitkub returns seconds
+        r = requests.get(f"{BASE_URL}/api/v3/servertime", timeout=5)
         return int(r.text)
     except:
-        # Fallback to local time (seconds)
         return int(time.time())
 
 def send_discord_alert(message, is_error=False):
     if not DISCORD_WEBHOOK_URL:
-        print(message)
+        # print(f"[Discord Mock] {message}")
         return
 
     color = 16711680 if is_error else 65280 # Red or Green
@@ -44,218 +53,364 @@ def send_discord_alert(message, is_error=False):
         }]
     }
     try:
-        requests.post(DISCORD_WEBHOOK_URL, json=payload)
-        print(f"Dicord sent: {message}")
+        requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=5)
     except Exception as e:
         print(f"Failed to send Discord: {e}")
 
+def get_config_for_symbol(symbol_thb, target_map):
+    """
+    Resolves the configuration for a given symbol.
+    Returns a dict: {"TIME": "HH:MM", "AMOUNT": float, "BUY_ENABLED": bool}
+    """
+    config = {
+        "TIME": DEFAULT_TARGET_TIME, 
+        "AMOUNT": DEFAULT_DCA_AMOUNT, 
+        "BUY_ENABLED": True,
+        "LAST_BUY_DATE": None,
+        "KEY": symbol_thb # Store the key used in map for updates later
+    }
+    
+    # keys to check in order: "BTC_THB", "BTC/USDT"
+    keys_to_check = [symbol_thb]
+    try:
+        base = symbol_thb.split('_')[0]
+        keys_to_check.append(f"{base}/USDT")
+    except:
+        pass
+
+    found_entry = None
+    target_key = symbol_thb
+    
+    for key in keys_to_check:
+        if key in target_map:
+            found_entry = target_map[key]
+            target_key = key
+            break
+            
+    config["KEY"] = target_key
+            
+    if found_entry:
+        if isinstance(found_entry, dict):
+            # New Format
+            config["TIME"] = found_entry.get("TIME", DEFAULT_TARGET_TIME)
+            config["AMOUNT"] = float(found_entry.get("AMOUNT", DEFAULT_DCA_AMOUNT))
+            config["BUY_ENABLED"] = found_entry.get("BUY_ENABLED", True)
+            config["LAST_BUY_DATE"] = found_entry.get("LAST_BUY_DATE", None)
+        else:
+            # Old Format (String Time)
+            config["TIME"] = str(found_entry)
+            
+    else:
+        print(f"⚠️ No config found for {symbol_thb}. Using defaults.")
+
+    return config
+
+def is_time_to_trade(target_time_str):
+    """
+    Checks if current BKK time matches the target time (HH:MM) within a small window.
+    Assumes script runs frequently (e.g. every 15-30 mins).
+    We check if current time is within [target, target + 15m).
+    """
+    now = datetime.now(TZ_BKK)
+    current_hm = now.strftime("%H:%M")
+    
+    # Parse target
+    try:
+        t_hour, t_minute = map(int, target_time_str.split(':'))
+        target_dt = now.replace(hour=t_hour, minute=t_minute, second=0, microsecond=0)
+    except:
+        print(f"❌ Invalid target time format: {target_time_str}")
+        return False
+    
+    # If target is tomorrow (e.g. now=23:50, target=00:10), this naive compare fails.
+    # But usually we run daily cycle. If target is 00:10 and now is 23:50, diff is huge.
+    # If target is 23:50 and now is 00:05 (next day), diff is negative.
+    # Simple fix: we only care if NOW is "just after" TARGET.
+    
+    diff = (now - target_dt).total_seconds()
+    
+    # Handle day wrap for "just after midnight" if target was late night?
+    # No, typically cron runs same day. 
+    # If target=23:55 and now=00:05, diff is negative huge?
+    # Wait: now(00:05) - target(23:55 today) -> target is in future? No.
+    # If now is 00:05, target 23:55 of TODAY is in future. Diff is large negative.
+    # So we missed yesterday's window.
+    
+    print(f"Checking Time: Now={current_hm} vs Target={target_time_str} (Diff={diff:.0f}s)")
+    
+    # Allow execution if within 15 minutes AFTER target time.
+    if 0 <= diff < 900:
+        return True
+    
+    return False
+
 def bitkub_request(method, endpoint, payload=None):
     if not API_KEY or not API_SECRET:
-        raise ValueError("Missing BITKUB_API_KEY or BITKUB_API_SECRET")
+        # raise ValueError("Missing BITKUB_API_KEY or BITKUB_API_SECRET")
+        pass # Allow running without keys for testing time logic (will fail later on execute)
 
-    # 1. Sync Time
     ts = str(get_server_time())
-    
-    # 2. Prepare Payload
-    # Use compact separators to match signature expectation
     payload_str = json.dumps(payload, separators=(',', ':')) if payload else ''
-    
-    # 3. Create Signature
-    # Message: timestamp + method + endpoint + payload
     sig_message = f"{ts}{method}{endpoint}{payload_str}"
     
-    signature = hmac.new(
-        API_SECRET.encode('utf-8'),
-        sig_message.encode('utf-8'),
-        hashlib.sha256
-    ).hexdigest()
+    signature = ""
+    if API_SECRET:
+        signature = hmac.new(
+            API_SECRET.encode('utf-8'),
+            sig_message.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
     
-    # 4. Headers
     headers = {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
-        'X-BTK-APIKEY': API_KEY,
+        'X-BTK-APIKEY': API_KEY or "",
         'X-BTK-TIMESTAMP': ts,
         'X-BTK-SIGN': signature
     }
     
-    # 5. Execute
     url = BASE_URL + endpoint
-    print(f"Sending {method} to {url}...")
+    # print(f"Sending {method} to {url}...") # Verbose
     try:
-        response = requests.request(method, url, headers=headers, data=payload_str)
+        response = requests.request(method, url, headers=headers, data=payload_str, timeout=10)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.HTTPError as e:
-        # Bitkub returns errors in JSON usually
         try:
             err_json = response.json()
-            raise Exception(f"Bitkub API Error: {err_json.get('error', e)}")
+            error_code = err_json.get('error', 'Unknown')
+            # raise Exception(f"Bitkub API Error {error_code}: {err_json}")
+            return err_json # Return error dict instead of exception to handle gracefully
         except:
             raise e
 
-def main():
-    print(f"--- Starting DCA for {SYMBOL} ---")
-    print(f"Amount: {DCA_AMOUNT} THB")
+import subprocess
+
+def update_repo_variable(map_key, new_last_buy_date):
+    """
+    Updates the DCA_TARGET_MAP variable in the GitHub repository.
+    Because we can't easily modify one key in the JSON via gh cli,
+    we have to read the current full map, update it locally, and push the whole JSON.
+    NOTE: This is tricky with reading env vars vs repo vars.
+    We'll rely on generating a new JSON string valid for the NEXT run.
+    """
+    # 1. Load Current Map
+    # We must use the 'current' map loaded in memory, update it, and push back.
+    # But wait, main() has the map. We need to pass it or reload it?
+    # Better: This function takes the *whole* map object, modifies it, and pushes.
+    pass 
+
+def save_last_buy_date(target_map, symbol_key, date_str):
+    print(f"💾 Saving LAST_BUY_DATE for {symbol_key} as {date_str}...")
+    
+    # Update local object
+    if symbol_key not in target_map:
+        target_map[symbol_key] = {}
+        
+    if not isinstance(target_map[symbol_key], dict):
+        # Convert simple "07:00" to dict object to support LAST_BUY_DATE
+        target_map[symbol_key] = {
+            "TIME": str(target_map[symbol_key]),
+            "AMOUNT": DEFAULT_DCA_AMOUNT,
+            "BUY_ENABLED": True
+        }
+        
+    target_map[symbol_key]["LAST_BUY_DATE"] = date_str
+    
+    # Serialize
+    new_json = json.dumps(target_map)
+    
+    # Push to GitHub
+    # Requires GIST_TOKEN (which we also used as GH_PAT_FOR_VARS)
+    token = os.environ.get("GIST_TOKEN") 
+    if not token:
+        print("⚠️ No GIST_TOKEN found. Cannot update repository variable LAST_BUY_DATE.")
+        return
 
     try:
-        # Construct Order
-        # MARKET BUY: rat=0, typ=market
+        # We use 'gh api' to update the variable which is cleaner than 'gh variable set'
+        # Endpoint: PATCH /repos/{owner}/{repo}/actions/variables/{name}
+        # But we need owner/repo.
+        # Simpler: Use 'gh variable set' if 'gh' is installed and auth'd.
+        # In GHA, we can perform: echo "$TOKEN" | gh auth login --with-token
+        
+        # But wait, the environment might not have 'gh' authenticated with the token yet.
+        # The workflow step usually does not auth 'gh' by default unless using actions/checkout with token?
+        # Actually, we can just use requests against the API if we have the token.
+        
+        # We need the repo name. GHA provides GITHUB_REPOSITORY.
+        repo = os.environ.get("GITHUB_REPOSITORY") # "owner/repo"
+        if not repo:
+             print("⚠️ GITHUB_REPOSITORY env var missing. Cannot update variable.")
+             return
+             
+        url = f"https://api.github.com/repos/{repo}/actions/variables/DCA_TARGET_MAP"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28"
+        }
+        data = {"name": "DCA_TARGET_MAP", "value": new_json}
+        
+        r = requests.patch(url, headers=headers, json=data, timeout=10)
+        if r.status_code == 204:
+            print("✅ Successfully updated DCA_TARGET_MAP on GitHub.")
+        else:
+            print(f"⚠️ Failed to update variable: {r.status_code} {r.text}")
+            
+    except Exception as e:
+        print(f"⚠️ Error updating variable: {e}")
+
+def execute_trade(symbol, amount_thb, map_key=None, target_map=None):
+    print(f"🚀 Executing DCA Buy for {symbol} ({amount_thb} THB)...")
+    
+    try:
+        # 1. Place Bid
         order_payload = {
-            "sym": SYMBOL,
-            "amt": DCA_AMOUNT, # Spend this much THB
-            "rat": 0,          # Market price
+            "sym": symbol,
+            "amt": amount_thb, 
+            "rat": 0, 
             "typ": "market"
         }
-
-
-        # Execute Order
+        
         result = bitkub_request('POST', '/api/v3/market/place-bid', order_payload)
         
-        # Parse Result
         if result.get('error') != 0:
-            raise Exception(f"API returned error code: {result.get('error')}")
+            raise Exception(f"API Error Code: {result.get('error')}")
 
-        initial_res = result.get('result', {})
-        order_id = initial_res.get('id')
+        order_id = result.get('result', {}).get('id')
+        print(f"   Placed Order ID: {order_id}. Waiting for match...")
         
-        # --- FETCH ACTUAL FILL DETAILS ---
-        # The place-bid response doesn't show actual amount received for market orders
-        # We must "wait and check" the order info.
-        time.sleep(3) # Give the engine a moment to match, 3s is safer
+        # 2. Wait
+        time.sleep(3) 
+
+        # 3. Fetch Details
+        info_params = f"sym={symbol}&id={order_id}&sd=buy"
+        path_query = f"/api/v3/market/order-info?{info_params}"
+        ts = str(get_server_time())
+        sig_msg = f"{ts}GET{path_query}"
         
-        print(f"Fetching info for Order ID: {order_id}...")
+        sig = ""
+        if API_SECRET:
+             sig = hmac.new(API_SECRET.encode('utf-8'), sig_msg.encode('utf-8'), hashlib.sha256).hexdigest()
         
-        info_payload = {
-            "sym": SYMBOL,
-            "id": order_id,
-            "sd": "buy" # side is required
-        }
-        
-        # Bitkub uses a different endpoint for checking specific order status
-        # For V3, it's often GET /api/v3/market/order-info?sym=...&id=...&sd=...
-        # But this script is set up for POST primarily. Let's try POST to order-info 
-        # (Bitkub supports POST for this endpoint too usually, or we adapt)
-        
-        # NOTE: Bitkub API V3 /market/order-info takes query params for GET
-        # Let's adjust bitkub_request to support GET params properly?
-        # Actually simplest is just to use the POST payload if supported, 
-        # BUT standard Bitkub doc says GET.
-        
-        # Let's try to fetch order info via POST which is safer with signature in body
-        # API: /api/v3/market/order-info
-        # V3 says GET, but typically needs query params. Some V3 support POST.
-        # If POST failed with 405 (Method Not Allowed), it means GET is mandatory.
-        # But our bitkub_request function is set up for POST (json body).
-        
-        # We need to construct a GET request with query params and signature.
-        # Let's do it manually here to avoid rewriting the whole bitkub_request function right now.
-        
-        timestamp_for_info = str(get_server_time())
-        query_params = f"sym={SYMBOL}&id={order_id}&sd=buy"
-        
-        # Signature for GET: timestamp + method + endpoint + ? + query_params
-        # Bitkub V3 GET signature is typically: timestamp + method + path + query (without ?)
-        path_with_query = f"/api/v3/market/order-info?{query_params}"
-        
-        sig_msg = f"{timestamp_for_info}GET{path_with_query}"
-        
-        sig_info = hmac.new(
-            API_SECRET.encode('utf-8'),
-            sig_msg.encode('utf-8'),
-            hashlib.sha256
-        ).hexdigest()
-        
-        headers_info = {
+        headers = {
             'Accept': 'application/json',
             'Content-Type': 'application/json',
             'X-BTK-APIKEY': API_KEY,
-            'X-BTK-TIMESTAMP': timestamp_for_info,
-            'X-BTK-SIGN': sig_info
+            'X-BTK-TIMESTAMP': ts,
+            'X-BTK-SIGN': sig
         }
         
-        url_info = BASE_URL + path_with_query
-        print(f"Sending GET to {url_info}...")
-        
-        order_info_res_raw = requests.get(url_info, headers=headers_info)
-        order_info_res_raw.raise_for_status()
-        order_info_res = order_info_res_raw.json()
-        
-        order_data = order_info_res.get('result', {})
-        
-        # --- PARSE EXECUTION DETAILS CAREFULLY ---
-        # Bitkub "order-info" for Market Buy:
-        # 'first' = Initial THB amount requested
-        # 'filled' = Total THB amount successfully matched (SPENT)
-        # 'history' = Array of trades. Each has 'amount' (Crypto received) and 'rate'.
+        r_info = requests.get(BASE_URL + path_query, headers=headers, timeout=10)
+        r_info.raise_for_status()
+        order_data = r_info.json().get('result', {})
         
         spent_thb = float(order_data.get('filled', 0))
-        if spent_thb == 0:
-             # Fallback if 'filled' is 0 (unlikely for market buy unless failed immediately)
-             spent_thb = float(order_data.get('total', 0))
+        if spent_thb == 0: spent_thb = float(order_data.get('total', 0))
 
-        # Calculate received Amount from history
         history = order_data.get('history', [])
-        received_amt = 0.0
+        received_amt = sum(float(t['amount'])/float(t['rate']) for t in history if float(t.get('rate',0)) > 0)
         
-        if history:
-            for trade in history:
-                trade_amt = float(trade.get('amount', 0))
-                trade_rate = float(trade.get('rate', 0))
-                # For BUY orders, Bitkub returns 'amount' in THB (Quote currency) for Market Bids
-                # We need to calculate Crypto received: THB / Rate
-                if trade_rate > 0:
-                    received_amt += trade_amt / trade_rate
-                else:
-                    # Fallback or invalid rate
-                    pass
-        else:
-             # Fallback: sometimes 'amount' in top level might be crypto if type is limit sell, 
-             # but for market buy it is THB.
-             # If no history, we might have failed to match yet.
-             pass
+        rate = (spent_thb / received_amt) if received_amt > 0 else 0
+        ts_exec = int(order_data.get('ts', time.time()))
+        dt_str = datetime.fromtimestamp(ts_exec).strftime('%Y-%m-%d %H:%M:%S')
 
-        # Calculate average rate
-        if received_amt > 0:
-            rate = spent_thb / received_amt
-        else:
-            rate = 0
+        # 4. Log to Gist
+        base_sym = symbol.split('_')[0]
+        update_gist_log({
+            "ts": ts_exec,
+            "amount_thb": spent_thb,
+            "price": rate,
+            "amount_btc": received_amt, # Generic field name, but holds crypto amount
+            "usd_rate": 0, 
+            "order_id": order_id
+        }, symbol=base_sym) # Pass "BTC" or "LINK"
 
-        # Timestamp from THIS response (execution time)
-        ts = int(order_info_res.get('result', {}).get('ts', time.time()))
-        
-        # Format time
-        dt_str = datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
-
-        # Log to Gist (Optional)
-        try:
-            trade_payload = {
-                "ts": ts,
-                "amount_thb": spent_thb,
-                "price": rate,
-                "amount_btc": received_amt,
-                "usd_rate": 0, # Placeholder, gist_logger will fetch specific FX rate or ignore this
-                "order_id": order_id
-            }
-            update_gist_log(trade_payload)
-        except Exception as gist_err:
-            print(f"Gist logging warning: {gist_err}")
-
+        # 5. Notify
         msg = (
             f"✅ **DCA Buy Executed!**\n"
-            f"🔹 **Pair:** {SYMBOL}\n"
+            f"🔹 **Pair:** {symbol}\n"
             f"💰 **Spent:** {spent_thb:.2f} THB\n"
-            f"📥 **Received:** {received_amt:.8f} {SYMBOL.split('_')[0]}\n"
+            f"📥 **Received:** {received_amt:.8f} {base_sym}\n"
             f"🏷️ **Rate:** {rate:,.2f} THB\n"
             f"🕒 **Time:** {dt_str}\n"
             f"🆔 **Order ID:** {order_id}"
         )
         send_discord_alert(msg, is_error=False)
 
+        # 6. Update LAST_BUY_DATE in DCA_TARGET_MAP
+        if map_key and target_map:
+            today_str = datetime.now(TZ_BKK).strftime("%Y-%m-%d")
+            print(f"🔄 Updating LAST_BUY_DATE for {map_key} to {today_str}...")
+            save_last_buy_date(target_map, map_key, today_str)
+
     except Exception as e:
-        err_msg = f"❌ **DCA Failed**: {str(e)}"
-        send_discord_alert(err_msg, is_error=True)
-        sys.exit(1)
+        err = f"❌ **DCA Failed ({symbol})**: {str(e)}"
+        print(err)
+        send_discord_alert(err, is_error=True)
+
+def main():
+    print(f"--- Starting Bitkub DCA Logic ---")
+    
+    # Parse Target Map
+    try:
+        target_map = json.loads(DCA_TARGET_MAP_JSON)
+    except:
+        print("⚠️ Failed to parse DCA_TARGET_MAP JSON. Using empty map.")
+        target_map = {}
+
+    print(f"Target Map Keys: {list(target_map.keys())}")
+
+    # Determine symbols to process
+    symbols_to_process = []
+    for k in target_map.keys():
+        if isinstance(target_map[k], dict):
+             # Check if explicitly disabled, if enabled or missing key -> include
+             if target_map[k].get("BUY_ENABLED", True):
+                 symbols_to_process.append(k)
+             else:
+                 print(f"🚫 {k} is DISABLED in config. Skipping.")
+        else:
+             # Legacy string format -> Assume enabled
+            symbols_to_process.append(k)
+    
+    # Clean list
+    symbols_to_process = [s.strip() for s in symbols_to_process if s.strip()]
+
+    print(f"Symbols to Process (Enabled): {symbols_to_process}")
+    
+    # Check explicit "FORCE_RUN" flag (for manual dispatch testing)
+    force_run = os.environ.get("FORCE_RUN", "false").lower() == "true"
+
+    for symbol in symbols_to_process:
+        print(f"\nPROCESSING {symbol}...")
+        
+        config = get_config_for_symbol(symbol, target_map)
+        
+        # BUY_ENABLED check is redundant if we filtered above, but good for safety
+        if not config["BUY_ENABLED"]:
+            print(f"⛔ Trade Disabled for {symbol}. Skipping.")
+            continue
+            
+        target_time = config["TIME"]
+        trade_amount = config["AMOUNT"]
+        
+        if force_run:
+            print("⚠️ Force Run enabled. Skipping time check.")
+            execute_trade(symbol, trade_amount, map_key=config["KEY"], target_map=target_map)
+        elif is_time_to_trade(target_time):
+            # Check LAST_BUY_DATE
+            today_str = datetime.now(TZ_BKK).strftime("%Y-%m-%d")
+            last_buy = config.get("LAST_BUY_DATE")
+            
+            if last_buy == today_str:
+                print(f"🛑 Already bought {symbol} today ({today_str}). Skipping.")
+            else:
+                print("✅ Time match & Not bought today! Executing trade.")
+                execute_trade(symbol, trade_amount, map_key=config["KEY"], target_map=target_map)
+        else:
+            print(f"⏳ Not time yet (Target: {target_time}). Skipping.")
 
 if __name__ == "__main__":
     main()

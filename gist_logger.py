@@ -33,7 +33,7 @@ def get_thb_usd_rate():
     print("⚠️ All FX sources failed. Using hardcoded fallback (0.028).")
     return 0.028
 
-def update_gist_log(trade_data):
+def update_gist_log(trade_data, symbol="BTC"):
     if not GIST_ID or not GIST_TOKEN:
         print("GIST_ID or GIST_TOKEN not set. Skipping log.")
         return
@@ -52,11 +52,17 @@ def update_gist_log(trade_data):
         r.raise_for_status()
         gist_obj = r.json()
         
-        filename = list(gist_obj['files'].keys())[0]
-        current_content = gist_obj['files'][filename]['content']
-        
+        # Use single file strategy
+        files_map = gist_obj['files']
+        if len(files_map) > 0:
+            filename = list(files_map.keys())[0]
+            current_content = files_map[filename]['content']
+        else:
+            filename = "trade_log.md"
+            current_content = ""
+            
         # 2. Format new row
-        # | Date | Time | THB Spent | USD Value | Buy Price (THB) | BTC Received | Order ID |
+        # | Date | Time | THB Spent | USD Value | Buy Price (THB) | Crypto Recv | Order ID | Logged |
         ts = datetime.fromtimestamp(trade_data['ts'])
         date_str = ts.strftime("%Y-%m-%d")
         time_str = ts.strftime("%H:%M")
@@ -70,11 +76,16 @@ def update_gist_log(trade_data):
             usd_value = trade_data.get('amount_btc', 0) * trade_data.get('usd_rate', 0)
 
         # Check if header exists, if not add it
+        header_line = "| Date | Time | THB Spent | USD Value | Buy Price (THB) | Crypto Recv | Order ID | Logged |\n"
+        separator_line = "|---|---|---|---|---|---|---|---|\n"
+        
         if "Date" not in current_content:
-            header = "| Date | Time | THB Spent | USD Value | Buy Price (THB) | BTC Recv | Order ID | Logged |\n"
-            current_content = header + current_content
+            current_content = header_line + separator_line + current_content
             
-        row = f"| {date_str} | {time_str} | {trade_data['amount_thb']:.2f} | ${usd_value:.2f} | {trade_data['price']:.2f} | {trade_data['amount_btc']:.8f} | {trade_data['order_id']} | false |"
+        # Append symbol to crypto amount for clarity (e.g. 0.0001 BTC)
+        crypto_val = f"{trade_data['amount_btc']:.8f} {symbol}"
+        
+        row = f"| {date_str} | {time_str} | {trade_data['amount_thb']:.2f} | ${usd_value:.2f} | {trade_data['price']:.2f} | {crypto_val} | {trade_data['order_id']} | false |"
         
         # Ensure newline
         if not current_content.endswith('\n'):
@@ -89,7 +100,7 @@ def update_gist_log(trade_data):
             }
         }
         requests.patch(f"https://api.github.com/gists/{GIST_ID}", headers=headers, json=payload)
-        print("✅ Gist log updated.")
+        print(f"✅ Gist log updated for {symbol} in {filename}.")
         
     except Exception as e:
         print(f"❌ Failed to update Gist: {e}")

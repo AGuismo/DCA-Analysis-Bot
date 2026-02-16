@@ -1,133 +1,41 @@
 name: Daily Bitkub DCA
 
 on:
+  workflow_dispatch:
   push:
-    branches: [ "disabled" ] # Fully disabled for push
-  # workflow_dispatch:
-  #   inputs:
-  #     amount:
-  #       description: 'Amount in THB'
-  #       required: true
-  #       default: '800'
-  #     symbol:
-  #       description: 'Symbol (e.g. BTC_THB)'
-  #       required: true
-  #       default: 'BTC_THB'
+    branches: [ "main" ]
 
 jobs:
   trade:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Safety Check (Once Per Day)
-      id: safety_check
-      env:
-        LAST_BUY_DATE: ${{ vars.LAST_BUY_DATE }}
-        # Use IANA Timezone name (e.g. Asia/Bangkok)
-        TIMEZONE: ${{ vars.TIMEZONE || 'Asia/Bangkok' }} 
-        DCA_AMOUNT: ${{ inputs.amount || '800' }}
-      run: |
-        # Get Current Date in Local Time using standard TZ variable
-        TODAY_LOCAL=$(TZ=$TIMEZONE date +%Y-%m-%d)
-        
-        echo "Today (Local): $TODAY_LOCAL"
-        echo "Last Buy:      $LAST_BUY_DATE"
-        echo "Amount:        $DCA_AMOUNT"
-        
-        if [ "$TODAY_LOCAL" == "$LAST_BUY_DATE" ]; then
-          echo "⛔ Already bought today. Skipping."
-          echo "safe_to_run=false" >> $GITHUB_OUTPUT
-        else
-          echo "✅ New day detected. Proceeding."
-          echo "safe_to_run=true" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Check Time Window (Bash)
-      id: check_time
-      # Only run if safety check passed
-      if: steps.safety_check.outputs.safe_to_run == 'true'
-      env:
-        # Defaults to 14:45 if variable not set
-        TARGET_TIME_LOCAL: ${{ vars.DCA_TARGET_TIME || '14:45' }}
-        TIMEZONE: ${{ vars.TIMEZONE || 'Asia/Bangkok' }}
-      run: |
-        # 1. Parse Target Hour:Minute
-        TARGET_HH=$(echo $TARGET_TIME_LOCAL | cut -d: -f1)
-        TARGET_MM=$(echo $TARGET_TIME_LOCAL | cut -d: -f2)
-
-        # 2. Get Current Local Time (via TZ)
-        # Format: HHMM (e.g., 1445)
-        NOW_LOCAL_HHMM=$(TZ=$TIMEZONE date +%H%M)
-        TARGET_HHMM="${TARGET_HH}${TARGET_MM}"
-        
-        echo "Target Local: $TARGET_HHMM"
-        echo "Current Local: $NOW_LOCAL_HHMM"
-
-        # 3. Calculate Difference in Minutes
-        # Convert both to "minutes from midnight"
-        NOW_MINS=$(( 10#${NOW_LOCAL_HHMM:0:2} * 60 + 10#${NOW_LOCAL_HHMM:2:2} ))
-        TARGET_MINS=$(( 10#$TARGET_HH * 60 + 10#$TARGET_MM ))
-        
-        DIFF=$(( NOW_MINS - TARGET_MINS ))
-        
-        # Logic: 
-        # 1. If DIFF is positive (NOW > TARGET), we are late/overshot. BUY.
-        # 2. If DIFF is negative but within 5 mins (e.g. -4), we are close enough. BUY.
-        # 3. If DIFF is less than -5 (too early), WAIT.
-        
-        if [ "$DIFF" -ge -5 ]; then
-          echo "✅ MATCH! Time is reached or passed (Diff: $DIFF mins)."
-          echo "match=true" >> $GITHUB_OUTPUT
-        else
-          echo "⏳ Too early. Waiting for target time (Diff: $DIFF mins)."
-          echo "match=false" >> $GITHUB_OUTPUT
-        fi
-
     - uses: actions/checkout@v3
-      # Only download repo if we are running!
-      if: steps.check_time.outputs.match == 'true'
 
     - name: Set up Python
-      if: steps.check_time.outputs.match == 'true'
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
         cache: 'pip'
 
     - name: Install dependencies
-      if: steps.check_time.outputs.match == 'true'
-      run: pip install requests
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
 
-    - name: Run DCA Script
-      if: steps.check_time.outputs.match == 'true'
-      id: trade_execution
-      continue-on-error: true # Allow this step to fail so we can handle it
+    - name: Run DCA Trader
       env:
+        # Secrets
         BITKUB_API_KEY: ${{ secrets.BITKUB_API_KEY }}
         BITKUB_API_SECRET: ${{ secrets.BITKUB_API_SECRET }}
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         GIST_ID: ${{ secrets.GIST_ID }}
-        GIST_TOKEN: ${{ secrets.GH_PAT_FOR_VARS }}
-        DCA_AMOUNT_THB: ${{ inputs.amount || '800' }}
-        SYMBOL_THB: ${{ inputs.symbol || 'BTC_THB' }}
+        GIST_TOKEN: ${{ secrets.GH_PAT_FOR_VARS }} # Using PAT for gist logging
+        
+        # Variables configuration
+        DCA_TARGET_MAP: ${{ vars.DCA_TARGET_MAP }}
+        
+        # Timezone for logging/checks
+        TIMEZONE: ${{ vars.TIMEZONE || 'Asia/Bangkok' }}
+        
       run: python bitkub-dca.py
-
-    - name: Handle Failure (Mark as Done to Skip Retry)
-      if: steps.trade_execution.outcome == 'failure'
-      env:
-        GH_TOKEN: ${{ secrets.GH_PAT_FOR_VARS }}
-        TIMEZONE: ${{ vars.TIMEZONE || 'Asia/Bangkok' }}
-      run: |
-        echo "❌ Trade Failed. Marking today as 'done' to prevent retries..."
-        TODAY_LOCAL=$(TZ=$TIMEZONE date +%Y-%m-%d)
-        gh variable set LAST_BUY_DATE --body "$TODAY_LOCAL"
-
-    - name: Update Last Buy Date (Success Case)
-      if: steps.trade_execution.outcome == 'success'
-      env:
-        GH_TOKEN: ${{ secrets.GH_PAT_FOR_VARS }}
-        TIMEZONE: ${{ vars.TIMEZONE || 'Asia/Bangkok' }}
-      run: |
-        TODAY_LOCAL=$(TZ=$TIMEZONE date +%Y-%m-%d)
-        echo "Updating LAST_BUY_DATE to $TODAY_LOCAL..."
-        gh variable set LAST_BUY_DATE --body "$TODAY_LOCAL"

@@ -38,15 +38,17 @@ jobs:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         TIMEZONE: ${{ vars.TIMEZONE || 'Asia/Bangkok' }}
+        DCA_TARGET_MAP: ${{ vars.DCA_TARGET_MAP }} # Load existing map to preserve settings
         # Use binanceus for GitHub Actions runners (US IP) to avoid 451 errors
         EXCHANGE_ID: "binanceus"
-        SYMBOL: ${{ inputs.symbol || 'BTC/USDT' }}
+        # Combine inputs with a default list for scheduled runs
+        SYMBOL: ${{ inputs.symbol || 'BTC/USDT, LINK/USDT' }}
       run: python crypto-analysis.py
 
     - name: Update Repository Variable
-      if: success() && steps.analysis.outputs.best_time != ''
+      if: success() && steps.analysis.outputs.best_time_map != ''
       env:
         GH_TOKEN: ${{ secrets.GH_PAT_FOR_VARS }} # Needs a Personal Access Token with repo scope
       run: |
-        echo "Updating DCA_TARGET_TIME to ${{ steps.analysis.outputs.best_time }}..."
-        gh variable set DCA_TARGET_TIME --body "${{ steps.analysis.outputs.best_time }}"
+        echo "Updating DCA_TARGET_MAP to ${{ steps.analysis.outputs.best_time_map }}..."
+        gh variable set DCA_TARGET_MAP --body '${{ steps.analysis.outputs.best_time_map }}'

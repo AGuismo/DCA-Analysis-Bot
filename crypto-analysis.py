@@ -28,6 +28,12 @@ LOCAL_TZ = os.environ.get("TIMEZONE", "Asia/Bangkok")
 PERIODS = [14, 30, 45, 60]  # Focused on short-term market evolution
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+DCA_TARGET_MAP_ENV = os.environ.get("DCA_TARGET_MAP", "{}")
+try:
+    EXISTING_MAP = json.loads(DCA_TARGET_MAP_ENV)
+except:
+    EXISTING_MAP = {}
+
 
 # --- Fetch helper ---
 def fetch_ohlcv_last_n_days(exchange, symbol, timeframe, days):
@@ -314,20 +320,62 @@ def main():
             # Ideally the trader looks up by its own SYMBOL env var. 
             # Start simpl: Use the input symbol as the key.
             if final_time:
-                results_map[symbol] = final_time
+                log(f"\n🎯 FINAL DECISION for {symbol}: {final_time}")
+                
+                # Update Strategy:
+                # 1. Try to find an existing entry for this symbol (BTC/USDT or BTC_THB)
+                # 2. If it's a dict, update ["TIME"].
+                # 3. If it's a string, update the string value.
+                # 4. If missing, create a new dict entry with default settings.
+
+                # Normalize to THB key if possible (e.g., BTC/USDT -> BTC_THB)
+                base = symbol.split('/')[0]
+                thb_key = f"{base}_THB"
+                
+                # Determine which key to update
+                target_key = symbol # Default
+                if thb_key in EXISTING_MAP:
+                    target_key = thb_key
+                elif symbol in EXISTING_MAP:
+                    target_key = symbol
+                else:
+                    # New Entry: Prefer THB key for standard
+                    target_key = thb_key
+
+                # Update Logic
+                if target_key in EXISTING_MAP and isinstance(EXISTING_MAP[target_key], dict):
+                    EXISTING_MAP[target_key]["TIME"] = final_time
+                    log(f"✅ Updated existing config for '{target_key}' -> TIME: {final_time}")
+                elif target_key in EXISTING_MAP:
+                     # It's a string (legacy format)
+                     EXISTING_MAP[target_key] = final_time
+                     log(f"✅ Updated legacy string for '{target_key}' -> {final_time}")
+                else:
+                    # Create new Dictionary Entry
+                    EXISTING_MAP[target_key] = {
+                        "TIME": final_time,
+                        "AMOUNT": 800, # Default init
+                        "BUY_ENABLED": True
+                    }
+                    log(f"✨ Created new config for '{target_key}' -> {final_time}")
+
 
         except Exception as e:
              log(f"CRITICAL FAILURE processing {symbol}: {e}")
              send_to_discord(f"❌ Analysis Failed for {symbol}: {e}")
 
-    # Export the best time MAP for GitHub Actions
-    if results_map:
-        json_map = json.dumps(results_map)
-        print(f"DEBUG: Generated Map: {json_map}")
+    # Export the merged map for GitHub Actions
+    if EXISTING_MAP:
+        # We export the MODIFIED existing map, not just the new results
+        # Ensure json format matches what GH expects
+        json_map = json.dumps(EXISTING_MAP)
         
+        # If running locally without GITHUB_OUTPUT
         if os.environ.get("GITHUB_OUTPUT"):
             with open(os.environ["GITHUB_OUTPUT"], "a") as f:
                 f.write(f"best_time_map={json_map}\n")
+        else:
+            print(f"DEBUG: (Not in GHA) best_time_map={json_map}")
         else:
             print(f"DEBUG: (Not in GHA) best_time_map={json_map}")
 
