@@ -18,12 +18,88 @@ jobs:
         python-version: '3.9'
         cache: 'pip'
 
+    - name: Quick Check
+      id: check
+      shell: bash
+      env:
+        DCA_TARGET_MAP: ${{ vars.DCA_TARGET_MAP }}
+        TIMEZONE: ${{ vars.TIMEZONE || 'Asia/Bangkok' }}
+      run: |
+        # Ensure jq is installed (it is on ubuntu-latest)
+        if ! command -v jq &> /dev/null; then
+            echo "jq could not be found, installing..."
+            sudo apt-get update && sudo apt-get install -y jq
+        fi
+        
+        # Get current time in target timezone
+
+        CURRENT_HM=$(TZ="$TIMEZONE" date +"%H:%M")
+        CURRENT_YMD=$(TZ="$TIMEZONE" date +"%Y-%m-%d")
+        echo "Current Time ($TIMEZONE): $CURRENT_HM"
+        
+        # Convert HH:MM to minutes since midnight for comparison
+        IFS=':' read -r H M <<< "$CURRENT_HM"
+        CUR_MINS=$(( 10#$H * 60 + 10#$M ))
+        
+        # We will assume we need to run if ANY target matches
+        SHOULD_RUN="false"
+        
+        # Iterate through JSON keys using jq (available on ubuntu-latest)
+        # We process inside a subshell/block and only export if matching
+        
+        # We use a flag file because variables in pipes are scoped
+        touch .should_run_flag
+        echo "false" > .should_run_flag
+        
+        printf '%s' "$DCA_TARGET_MAP" | jq -r '
+          to_entries[] | 
+          if (.value | type) == "string" then
+            "\(.key)|\(.value)||\(true)"
+          else
+            "\(.key)|\(.value.TIME // "07:00")|\(.value.LAST_BUY_DATE // "")|\(.value.BUY_ENABLED // true)"
+          end
+        ' | while IFS='|' read -r SYMBOL TARGET_TIME LAST_BUY ENABLED; do
+        
+            if [ "$ENABLED" != "true" ]; then
+                continue
+            fi
+            
+            if [ "$LAST_BUY" == "$CURRENT_YMD" ]; then
+                echo "Skipping $SYMBOL: Already bought today ($LAST_BUY)"
+                continue
+            fi
+            
+            # Parse Target Time
+            IFS=':' read -r TH TM <<< "$TARGET_TIME"
+            # Sanity check if TH/TM are valid numbers
+            if [[ ! "$TH" =~ ^[0-9]+$ ]]; then continue; fi
+
+            TGT_MINS=$(( 10#$TH * 60 + 10#$TM ))
+            DIFF=$(( CUR_MINS - TGT_MINS ))
+            
+            echo "Checking $SYMBOL: Target $TARGET_TIME vs Now $CURRENT_HM (Diff ${DIFF}m)" >&2
+            
+            if [ "$DIFF" -ge -5 ]; then
+                echo "✅ MATCH: $SYMBOL needs trading." >&2
+                echo "true" > .should_run_flag
+                break
+            fi
+            
+        done
+        
+        SHOULD_RUN=$(cat .should_run_flag)
+        rm .should_run_flag
+        
+        echo "should_run=$SHOULD_RUN" >> $GITHUB_OUTPUT
+
     - name: Install dependencies
+      if: steps.check.outputs.should_run == 'true'
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
     - name: Run DCA Trader
+      if: steps.check.outputs.should_run == 'true'
       env:
         # Secrets
         BITKUB_API_KEY: ${{ secrets.BITKUB_API_KEY }}
