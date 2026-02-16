@@ -9,7 +9,7 @@ on:
       symbol:
         description: 'Trading Pair (e.g., BTC/USDT, ETH/USDT)'
         required: true
-        default: 'BTC/USDT'
+        default: 'BTC/USDT, LINK/USDT'
   push:
     branches: [ "main" ]
 
