@@ -2,17 +2,17 @@ name: Daily Bitkub DCA
 
 on:
   push:
-    branches: [ "main", "disabled" ] # Temporarily disabled
-  workflow_dispatch:
-    inputs:
-      amount:
-        description: 'Amount in THB'
-        required: true
-        default: '800'
-      symbol:
-        description: 'Symbol (e.g. BTC_THB)'
-        required: true
-        default: 'BTC_THB'
+    branches: [ "disabled" ] # Fully disabled for push
+  # workflow_dispatch:
+  #   inputs:
+  #     amount:
+  #       description: 'Amount in THB'
+  #       required: true
+  #       default: '800'
+  #     symbol:
+  #       description: 'Symbol (e.g. BTC_THB)'
+  #       required: true
+  #       default: 'BTC_THB'
 
 jobs:
   trade:
