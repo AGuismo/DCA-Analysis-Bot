@@ -77,10 +77,9 @@ def update_gist_log(trade_data, symbol="BTC"):
 
         # Check if header exists, if not add it
         header_line = "| Date | Time | THB Spent | USD Value | Buy Price (THB) | Crypto Recv | Order ID | Logged |\n"
-        separator_line = "|---|---|---|---|---|---|---|---|\n"
         
         if "Date" not in current_content:
-            current_content = header_line + separator_line + current_content
+            current_content = header_line + current_content
             
         # Append symbol to crypto amount for clarity (e.g. 0.0001 BTC)
         crypto_val = f"{trade_data['amount_btc']:.8f} {symbol}"
