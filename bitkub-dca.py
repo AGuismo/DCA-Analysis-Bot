@@ -8,16 +8,22 @@ import sys
 from datetime import datetime, timedelta
 from gist_logger import update_gist_log
 
-try:
-    from zoneinfo import ZoneInfo
-    TZ_BKK = ZoneInfo("Asia/Bangkok")
-except ImportError:
-    from datetime import timezone
-    TZ_BKK = timezone(timedelta(hours=7))
-
 # --- Configuration ---
 API_KEY = os.environ.get("BITKUB_API_KEY")
 API_SECRET = os.environ.get("BITKUB_API_SECRET")
+
+# Timezone Configuration
+TIMEZONE_NAME = os.environ.get("TIMEZONE", "Asia/Bangkok")
+try:
+    from zoneinfo import ZoneInfo
+    SELECTED_TZ = ZoneInfo(TIMEZONE_NAME)
+except ImportError:
+    # Fallback for Python < 3.9 or missing tzdata
+    from datetime import timezone
+    # Parse timezone offset (assume UTC+7 for Bangkok as fallback)
+    # This is a simplification - for production, consider pytz
+    SELECTED_TZ = timezone(timedelta(hours=7))
+    print(f"⚠️ zoneinfo not available. Using UTC+7 offset as fallback for {TIMEZONE_NAME}")
 
 # Default settings (fallback)
 DEFAULT_DCA_AMOUNT = 20.0 # Default trade amount if missing in JSON
@@ -111,7 +117,7 @@ def is_time_to_trade(target_time_str):
     Assumes script runs frequently (e.g. every 15-30 mins).
     We check if current time is within [target, target + 15m).
     """
-    now = datetime.now(TZ_BKK)
+    now = datetime.now(SELECTED_TZ)
     current_hm = now.strftime("%H:%M")
     
     # Parse target
@@ -392,7 +398,7 @@ def execute_trade(symbol, amount_thb, map_key=None, target_map=None):
 
         # 6. Update LAST_BUY_DATE in DCA_TARGET_MAP
         if map_key and target_map:
-            today_str = datetime.now(TZ_BKK).strftime("%Y-%m-%d")
+            today_str = datetime.now(SELECTED_TZ).strftime("%Y-%m-%d")
             print(f"🔄 Updating LAST_BUY_DATE for {map_key} to {today_str}...")
             save_last_buy_date(target_map, map_key, today_str)
 
@@ -446,7 +452,7 @@ def main():
         
         if is_time_to_trade(target_time):
             # Check LAST_BUY_DATE
-            today_str = datetime.now(TZ_BKK).strftime("%Y-%m-%d")
+            today_str = datetime.now(SELECTED_TZ).strftime("%Y-%m-%d")
             last_buy = config.get("LAST_BUY_DATE")
             
             if last_buy == today_str:
