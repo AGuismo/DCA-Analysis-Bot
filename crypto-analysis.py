@@ -4,12 +4,25 @@ import requests
 import os
 import sys
 import re
+import json
 import google.generativeai as genai
 from datetime import datetime, timedelta, timezone
 
 # --- Config ---
 EXCHANGE_ID = os.environ.get("EXCHANGE_ID", "binance")
-SYMBOL = os.environ.get("SYMBOL", "BTC/USDT")
+# Support comma-separated list OR JSON array
+SYMBOLS_ENV = os.environ.get("SYMBOL", '["BTC/USDT"]')
+
+try:
+    # Try parsing as JSON first
+    SYMBOLS = json.loads(SYMBOLS_ENV)
+    if not isinstance(SYMBOLS, list):
+        # If valid JSON but not a list (e.g. string), force list
+        SYMBOLS = [str(SYMBOLS)]
+except json.JSONDecodeError:
+    # Fallback to comma-separated string
+    SYMBOLS = [s.strip() for s in SYMBOLS_ENV.split(',')]
+
 TIMEFRAME = "15m"
 LOCAL_TZ = os.environ.get("TIMEZONE", "Asia/Bangkok")
 PERIODS = [14, 30, 45, 60]  # Focused on short-term market evolution
@@ -104,7 +117,7 @@ def analyze_period(df, days, local_tz):
 
     return top_common, top_avg, top_dca, period_df["ts"].min(), period_df["ts"].max()
 
-def get_ai_summary(full_report):
+def get_ai_summary(full_report, current_symbol):
     if not GEMINI_API_KEY:
         return "No GEMINI_API_KEY found. Skipping AI analysis.", None, None
 
@@ -112,7 +125,7 @@ def get_ai_summary(full_report):
         genai.configure(api_key=GEMINI_API_KEY)
 
         prompt = f"""
-        You are a crypto trading analyst. Analyze the following DCA report for {SYMBOL}.
+        You are a crypto trading analyst. Analyze the following DCA report for {current_symbol}.
         
         KEY METRIC EXPLANATION:
         - "median_miss": The median percentage difference between the close price at that time and the absolute lowest price of that same day. 
@@ -198,106 +211,125 @@ def send_to_discord(report_content):
             print(f"Failed to send to Discord: {e}")
 
 def main():
-    report_lines = []
-    
-    def log(s):
-        print(s)
-        report_lines.append(s)
-
-    log(f"Fetching max required data ({max(PERIODS)} days)...")
     exchange = getattr(ccxt, EXCHANGE_ID)({"enableRateLimit": True})
-    
-    # Fetch enough data for the largest period
-    rows = fetch_ohlcv_last_n_days(exchange, SYMBOL, TIMEFRAME, max(PERIODS))
+    results_map = {}
 
-    # Process into main DataFrame
-    df = pd.DataFrame(rows, columns=["ts", "open", "high", "low", "close", "volume"])
-    df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
-    df = df.drop_duplicates(subset=["ts"]).sort_values("ts")
+    for symbol in SYMBOLS:
+        print(f"\nExample: PROCESSING {symbol}...")
+        report_lines = []
+        
+        def log(s):
+            print(s)
+            report_lines.append(s)
 
-    # Pre-calculate local times
-    df["local_ts"] = df["ts"].dt.tz_convert(LOCAL_TZ)
-    df["local_date"] = df["local_ts"].dt.date
-    df["local_time"] = df["local_ts"].dt.strftime("%H:%M")
-
-    log(f"Timezone: {LOCAL_TZ}")
-
-    best_overall_time = None
-    
-    for days in PERIODS:
-        log(f"\n{'='*40}")
-        log(f" ANALYSIS FOR LAST {days} DAYS")
-        log(f"{'='*40}")
+        log(f"Fetching max required data ({max(PERIODS)} days) for {symbol}...")
         
         try:
-            top_common, top_avg, top_dca, start, end = analyze_period(df, days, LOCAL_TZ)
-            
-            # Capture the best time from the 30-day period
-            if days == 30 and not top_dca.empty:
-                best_overall_time = top_dca.iloc[0]['time']
-                log(f"🏆 CHAMPION TIME (30 Days): {best_overall_time}")
-            
-            log(f"Range: {start} -> {end}")
-            
-            log("\n(1) Most frequent DAILY-LOW time:")
-            log(top_common.to_string(index=False))
+            # Fetch enough data for the largest period
+            rows = fetch_ohlcv_last_n_days(exchange, symbol, TIMEFRAME, max(PERIODS))
 
-            log("\n(2) Best DCA Time (Lowest Median Miss from Daily Low):")
-            # Show price and the average discount relative to daily mean
-            log(top_dca.to_string(index=False))
-            log("* 'median_miss': Median % overpayment vs day's absolute low.")
-            log("* 'win_rate': % of days where the buy was within 0.5% of the absolute low.")
+            # Process into main DataFrame
+            df = pd.DataFrame(rows, columns=["ts", "open", "high", "low", "close", "volume"])
+            df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
+            df = df.drop_duplicates(subset=["ts"]).sort_values("ts")
+
+            # Pre-calculate local times
+            df["local_ts"] = df["ts"].dt.tz_convert(LOCAL_TZ)
+            df["local_date"] = df["local_ts"].dt.date
+            df["local_time"] = df["local_ts"].dt.strftime("%H:%M")
+
+            log(f"Timezone: {LOCAL_TZ}")
+
+            best_overall_time = None
             
+            for days in PERIODS:
+                log(f"\n{'='*40}")
+                log(f" ANALYSIS FOR LAST {days} DAYS ({symbol})")
+                log(f"{'='*40}")
+                
+                try:
+                    top_common, top_avg, top_dca, start, end = analyze_period(df, days, LOCAL_TZ)
+                    
+                    # Capture the best time from the 30-day period
+                    if days == 30 and not top_dca.empty:
+                        best_overall_time = top_dca.iloc[0]['time']
+                        log(f"🏆 CHAMPION TIME (30 Days): {best_overall_time}")
+                    
+                    log(f"Range: {start} -> {end}")
+                    
+                    log("\n(1) Most frequent DAILY-LOW time:")
+                    log(top_common.to_string(index=False))
+
+                    log("\n(2) Best DCA Time (Lowest Median Miss from Daily Low):")
+                    # Show price and the average discount relative to daily mean
+                    log(top_dca.to_string(index=False))
+                    log("* 'median_miss': Median % overpayment vs day's absolute low.")
+                    log("* 'win_rate': % of days where the buy was within 0.5% of the absolute low.")
+                    
+                except Exception as e:
+                    log(f"Could not analyze {days} days: {e}")
+
+            # After loop, send to discord
+            full_report = "\n".join(report_lines)
+            
+            final_time = best_overall_time
+            source_method = "Quantitative (30d Median Miss)"
+
+            if GEMINI_API_KEY:
+                log("\n" + "="*40)
+                log("🤖 AI ANALYSIS & RECOMMENDATION")
+                log("="*40)
+                ai_summary, ai_time, used_model = get_ai_summary(full_report, symbol)
+                
+                if used_model:
+                    log(f"🧠 Model Used: {used_model}")
+                    
+                log(ai_summary)
+                
+                if ai_time:
+                    log(f"\n✨ AI Recommendation Identified: {ai_time}")
+                    if ai_time != final_time:
+                        log(f"🔄 Switching target from {final_time} (Math) to {ai_time} (AI)")
+                        final_time = ai_time
+                        source_method = f"🤖 AI Recommendation"
+                    else:
+                        log("✅ AI agrees with Quantitative Analysis.")
+                        source_method = f"🤝 Consensus (AI + Math)"
+                else:
+                    log("⚠️ Could not extract valid time from AI. Sticking to math-based time.")
+
+            # Update full_report with new logs
+            log(f"\n🎯 FINAL DECISION for {symbol}: {final_time}")
+            log(f"ℹ️ SOURCE: {source_method}")
+            full_report = "\n".join(report_lines)
+
+            # Send individual report per symbol
+            send_to_discord(full_report)
+            
+            # Map symbol to final time
+            # Convert exchange symbol (BTC/USDT) to matching env key format if needed (BTC_THB)
+            # Strategy: We assume the user provides specific pairs. 
+            # If input is BTC/USDT, we map it to BTC_THB for the trader if that's the convention,
+            # OR we just store it as is and let the trader handle the mapping.
+            # Ideally the trader looks up by its own SYMBOL env var. 
+            # Start simpl: Use the input symbol as the key.
+            if final_time:
+                results_map[symbol] = final_time
+
         except Exception as e:
-            log(f"Could not analyze {days} days: {e}")
+             log(f"CRITICAL FAILURE processing {symbol}: {e}")
+             send_to_discord(f"❌ Analysis Failed for {symbol}: {e}")
 
-    # After loop, send to discord
-    full_report = "\n".join(report_lines)
-    
-    final_time = best_overall_time
-    source_method = "Quantitative (30d Median Miss)"
-
-    if GEMINI_API_KEY:
-        log("\n" + "="*40)
-        log("🤖 AI ANALYSIS & RECOMMENDATION")
-        log("="*40)
-        ai_summary, ai_time, used_model = get_ai_summary(full_report)
+    # Export the best time MAP for GitHub Actions
+    if results_map:
+        json_map = json.dumps(results_map)
+        print(f"DEBUG: Generated Map: {json_map}")
         
-        if used_model:
-            log(f"🧠 Model Used: {used_model}")
-            
-        log(ai_summary)
-        
-        if ai_time:
-            log(f"\n✨ AI Recommendation Identified: {ai_time}")
-            if ai_time != final_time:
-                log(f"🔄 Switching target from {final_time} (Math) to {ai_time} (AI)")
-                final_time = ai_time
-                source_method = f"🤖 AI Recommendation"
-            else:
-                log("✅ AI agrees with Quantitative Analysis.")
-                source_method = f"🤝 Consensus (AI + Math)"
-        else:
-            log("⚠️ Could not extract valid time from AI. Sticking to math-based time.")
-
-    # Update full_report with new logs
-    full_report = "\n".join(report_lines)
-    
-    # Add source to the final output for Discord/User
-    log(f"\n🎯 FINAL DECISION: {final_time}")
-    log(f"ℹ️ SOURCE: {source_method}")
-    full_report = "\n".join(report_lines)
-
-    send_to_discord(full_report)
-    
-    # Export the best time for GitHub Actions
-    if final_time:
-        # Check if running in GHA
         if os.environ.get("GITHUB_OUTPUT"):
             with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-                f.write(f"best_time={final_time}\n")
+                f.write(f"best_time_map={json_map}\n")
         else:
-            print(f"DEBUG: Best time {final_time} found (not in GHA).")
+            print(f"DEBUG: (Not in GHA) best_time_map={json_map}")
 
 if __name__ == "__main__":
     main()
