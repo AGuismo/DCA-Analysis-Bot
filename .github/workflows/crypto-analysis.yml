@@ -13,6 +13,11 @@ on:
   push:
     branches: [ "main" ]
 
+# Prevent race conditions: Only one analysis can run at a time
+concurrency:
+  group: crypto-analysis
+  cancel-in-progress: true  # Cancel old analysis if new one starts
+
 jobs:
   analyze:
     runs-on: ubuntu-latest

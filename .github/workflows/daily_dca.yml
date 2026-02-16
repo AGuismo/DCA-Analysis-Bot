@@ -5,6 +5,11 @@ on:
   push:
     branches: [ "main" ]
 
+# Prevent race conditions: Only one instance can run at a time
+concurrency:
+  group: bitkub-dca-trading
+  cancel-in-progress: false  # Wait for current run to finish, don't cancel it
+
 jobs:
   trade:
     runs-on: ubuntu-latest
