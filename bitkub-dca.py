@@ -55,7 +55,7 @@ def send_discord_alert(message, is_error=False):
             "title": "Crypto DCA Execution",
             "description": message,
             "color": color,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(SELECTED_TZ).isoformat()
         }]
     }
     try:
@@ -371,7 +371,7 @@ def execute_trade(symbol, amount_thb, map_key=None, target_map=None):
         
         rate = (spent_thb / received_amt) if received_amt > 0 else 0
         ts_exec = int(order_data.get('ts', time.time()))
-        dt_str = datetime.fromtimestamp(ts_exec).strftime('%Y-%m-%d %H:%M:%S')
+        dt_str = datetime.fromtimestamp(ts_exec, tz=SELECTED_TZ).strftime('%Y-%m-%d %H:%M:%S')
 
         # 4. Log to Gist
         base_sym = symbol.split('_')[0]
