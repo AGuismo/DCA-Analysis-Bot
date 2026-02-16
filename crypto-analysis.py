@@ -376,8 +376,6 @@ def main():
                 f.write(f"best_time_map={json_map}\n")
         else:
             print(f"DEBUG: (Not in GHA) best_time_map={json_map}")
-        else:
-            print(f"DEBUG: (Not in GHA) best_time_map={json_map}")
 
 if __name__ == "__main__":
     main()
