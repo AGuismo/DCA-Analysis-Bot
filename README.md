@@ -11,9 +11,9 @@ The system consists of two parts:
 - **Multi-Symbol Support**: Analyze and trade multiple pairs independently (e.g., BTC at 23:00, LINK at 23:45).
 - **Self-Optimizing**: Buy time adjusts daily based on 60-day historical analysis with AI-powered recommendations.
 - **Multi-Layer Safeguards**: Prevents double-buying with `LAST_BUY_DATE` tracking and workflow concurrency control.
-- **Detailed Logging**: All trades logged to GitHub Gist with THB→USD conversion for portfolio tracking.
-- **Discord Integration**: Real-time notifications for trades, errors, and critical alerts.
-- **Timezone Aware**: Configurable timezone support (defaults to Asia/Bangkok).
+- **Detailed Logging**: All trades logged to GitHub Gist with THB and USD amounts for portfolio tracking.
+- **Discord Integration**: Real-time notifications for trades (with THB+USD amounts), errors, and critical alerts including FX rate failures.
+- **Timezone Aware**: Fully configurable timezone support via `TIMEZONE` env variable (defaults to Asia/Bangkok).
 
 ### 1. Secrets (Secure Storage)
 Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository secret`:
@@ -65,8 +65,16 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository vari
 3. If match found → Install deps → Run Python
 4. **Python**: Validates time window (±5 min or catch-up), checks `LAST_BUY_DATE`
 5. Places market bid order (waits 5 seconds for fill)
-6. Logs to Gist, sends Discord alert
-7. Updates `LAST_BUY_DATE` with 3 retries (fails loudly on error)
+6. Fetches THB→USD exchange rate for logging
+7. Logs to Gist with USD conversion, sends Discord alert with THB and USD amounts
+8. Updates `LAST_BUY_DATE` with 3 retries (fails loudly on error)
+
+## Currency Conversion
+
+The system fetches real-time THB→USD exchange rates from multiple sources:
+- **Primary**: Frankfurter API (`api.frankfurter.app`)
+- **Secondary**: Open Exchange Rate API (`open.er-api.com`)
+- **Fallback**: If all sources fail, USD values show as `$0.00` and an error notification is sent to Discord
 
 ## Safeguards Against Double-Buying
 
