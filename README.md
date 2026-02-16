@@ -1,10 +1,10 @@
 # Smart DCA Automation (Multi-Symbol Analysis + Execution)
 
-A complete system that automatically analyzes market data to find the best time of day to buy for **multiple cryptocurrencies**, and then executes trades on **Bitkub** (Thai Exchange) automatically.
+A complete system that automatically analyzes market data to find the best time of day to buy for **multiple cryptocurrencies**, and then executes trades automatically on your configured exchange.
 
 The system consists of two parts:
 1.  **The Analyst (`crypto-analysis.py`)**: Runs daily (06:00 BKK / 23:00 UTC). Analyzes **60 days** of price data across **4 periods** (14, 30, 45, 60 days) for **multiple pairs** (e.g., BTC/USDT, LINK/USDT) to find the "Champion Time" for each. Uses AI synthesis to pick optimal buy time. Updates repository variable `DCA_TARGET_MAP`.
-2.  **The Trader (`bitkub-dca.py`)**: Triggered on **push to main** or **manual dispatch**. Checks if current time matches target time for any enabled symbol. Executes market buy orders on Bitkub and logs to Gist.
+2.  **The Trader (`bitkub-dca.py`)**: Triggered on **push to main** or **manual dispatch**. Checks if current time matches target time for any enabled symbol. Executes market buy orders and logs to Gist.
 
 ## Features
 
@@ -20,8 +20,8 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository secr
 
 | Secret Name | Value Description |
 | :--- | :--- |
-| `BITKUB_API_KEY` | Your Bitkub API Key. |
-| `BITKUB_API_SECRET` | Your Bitkub API Secret. |
+| `BITKUB_API_KEY` | Your exchange API Key. |
+| `BITKUB_API_SECRET` | Your exchange API Secret. |
 | `GEMINI_API_KEY` | Google AI Studio Key. |
 | `DISCORD_WEBHOOK_URL` | Your Discord Webhook URL. |
 | `GH_PAT_FOR_VARS` | Personal Access Token (Classic) with `repo` and **`gist`** scope. Used to update variables and write to your log. |
@@ -64,7 +64,7 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository vari
 2. **Bash Quick Check**: Filters by `BUY_ENABLED`, `LAST_BUY_DATE`, time window
 3. If match found → Install deps → Run Python
 4. **Python**: Validates time window (±5 min or catch-up), checks `LAST_BUY_DATE`
-5. Places market bid on Bitkub (waits 5 seconds for fill)
+5. Places market bid order (waits 5 seconds for fill)
 6. Logs to Gist, sends Discord alert
 7. Updates `LAST_BUY_DATE` with 3 retries (fails loudly on error)
 

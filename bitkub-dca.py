@@ -52,7 +52,7 @@ def send_discord_alert(message, is_error=False):
     color = 16711680 if is_error else 65280 # Red or Green
     payload = {
         "embeds": [{
-            "title": "Bitkub DCA Execution",
+            "title": "Crypto DCA Execution",
             "description": message,
             "color": color,
             "timestamp": datetime.utcnow().isoformat()
@@ -408,7 +408,7 @@ def execute_trade(symbol, amount_thb, map_key=None, target_map=None):
         send_discord_alert(err, is_error=True)
 
 def main():
-    print(f"--- Starting Bitkub DCA Logic ---")
+    print(f"--- Starting DCA Logic ---")
     
     # Parse Target Map
     try:
