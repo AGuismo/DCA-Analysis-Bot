@@ -136,12 +136,24 @@ def is_time_to_trade(target_time_str):
     # If now is 00:05, target 23:55 of TODAY is in future. Diff is large negative.
     # So we missed yesterday's window.
     
-    print(f"Checking Time: Now={current_hm} vs Target={target_time_str} (Diff={diff:.0f}s)")
+    # Rules:
+    # 1. If within +/- 5 mins of target time -> BUY
+    # 2. If target time is in the past (today) -> BUY (Catch-up mechanism)
+    #    (The catch-up relies on the "Not bought today" check in main loop)
     
-    # Allow execution if within 15 minutes AFTER target time.
-    if 0 <= diff < 900:
+    abs_diff = abs(diff)
+    
+    # Rule 1: Window check (+/- 5 mins = 300s)
+    if abs_diff <= 300:
+        print(f"✅ Within window (+/- 5m). Diff={diff:.0f}s")
         return True
-    
+        
+    # Rule 2: Late check (Target passed today)
+    # If diff is positive (Now > Target)
+    if diff > 0:
+        print(f"✅ Target time passed today. Diff={diff:.0f}s. Catch-up mode.")
+        return True
+        
     return False
 
 def bitkub_request(method, endpoint, payload=None):
