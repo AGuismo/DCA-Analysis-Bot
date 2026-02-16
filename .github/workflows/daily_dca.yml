@@ -2,7 +2,7 @@ name: Daily Bitkub DCA
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "disabled" ] # Temporarily disabled
   workflow_dispatch:
     inputs:
       amount:
