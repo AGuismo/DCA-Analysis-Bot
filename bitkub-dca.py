@@ -430,9 +430,6 @@ def main():
     symbols_to_process = [s.strip() for s in symbols_to_process if s.strip()]
 
     print(f"Symbols to Process (Enabled): {symbols_to_process}")
-    
-    # Check explicit "FORCE_RUN" flag (for manual dispatch testing)
-    force_run = os.environ.get("FORCE_RUN", "false").lower() == "true"
 
     for symbol in symbols_to_process:
         print(f"\nPROCESSING {symbol}...")
@@ -447,10 +444,7 @@ def main():
         target_time = config["TIME"]
         trade_amount = config["AMOUNT"]
         
-        if force_run:
-            print("⚠️ Force Run enabled. Skipping time check.")
-            execute_trade(symbol, trade_amount, map_key=config["KEY"], target_map=target_map)
-        elif is_time_to_trade(target_time):
+        if is_time_to_trade(target_time):
             # Check LAST_BUY_DATE
             today_str = datetime.now(TZ_BKK).strftime("%Y-%m-%d")
             last_buy = config.get("LAST_BUY_DATE")
