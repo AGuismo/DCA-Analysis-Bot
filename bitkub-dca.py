@@ -373,19 +373,8 @@ def execute_trade(symbol, amount_thb, map_key=None, target_map=None):
         ts_exec = int(order_data.get('ts', time.time()))
         dt_str = datetime.fromtimestamp(ts_exec, tz=SELECTED_TZ).strftime('%Y-%m-%d %H:%M:%S')
 
-        # 4. Log to Gist
+        # 4. Calculate USD value
         base_sym = symbol.split('_')[0]
-        update_gist_log({
-            "ts": ts_exec,
-            "amount_thb": spent_thb,
-            "price": rate,
-            "amount_btc": received_amt, # Generic field name, but holds crypto amount
-            "usd_rate": 0, 
-            "order_id": order_id
-        }, symbol=base_sym) # Pass "BTC" or "LINK"
-
-        # 5. Notify
-        # Calculate USD value
         fx_rate = get_thb_usd_rate()
         
         if fx_rate == 0:
@@ -398,7 +387,52 @@ def execute_trade(symbol, amount_thb, map_key=None, target_map=None):
             send_discord_alert(fx_error_msg, is_error=True)
         
         usd_spent = spent_thb * fx_rate if fx_rate > 0 else 0
-        
+        usd_price_per_unit = (usd_spent / received_amt) if received_amt > 0 else 0
+
+        # 5. Log to Ghostfolio
+        ghostfolio_saved = False
+        try:
+            from portfolio_logger import log_to_ghostfolio, get_account_id
+            
+            portfolio_map_json = os.environ.get("PORTFOLIO_ACCOUNT_MAP", "{}")
+            portfolio_map = json.loads(portfolio_map_json)
+            
+            account_id = get_account_id(base_sym, portfolio_map)
+            
+            if account_id:
+                ghostfolio_data = {
+                    "ts": ts_exec,
+                    "amount_crypto": received_amt,
+                    "amount_thb": spent_thb,
+                    "amount_usd": usd_spent,
+                    "symbol": base_sym,
+                    "order_id": order_id,
+                    "usd_price_per_unit": usd_price_per_unit
+                }
+                
+                ghostfolio_saved = log_to_ghostfolio(ghostfolio_data, base_sym, account_id)
+                
+                if ghostfolio_saved:
+                    print(f"✅ Logged to Ghostfolio account {account_id}")
+                else:
+                    print(f"⚠️ Failed to log to Ghostfolio")
+            else:
+                print(f"⚠️ No Ghostfolio account configured for {base_sym}")
+                
+        except Exception as e:
+            print(f"⚠️ Ghostfolio logging error: {e}")
+
+        # 6. Log to Gist
+        update_gist_log({
+            "ts": ts_exec,
+            "amount_thb": spent_thb,
+            "price": rate,
+            "amount_btc": received_amt, # Generic field name, but holds crypto amount
+            "usd_rate": 0, 
+            "order_id": order_id
+        }, symbol=base_sym, saved_to_ghostfolio=ghostfolio_saved)
+
+        # 7. Notify Discord
         msg = (
             f"✅ **DCA Buy Executed!**\n"
             f"🔹 **Pair:** {symbol}\n"
@@ -406,12 +440,13 @@ def execute_trade(symbol, amount_thb, map_key=None, target_map=None):
             f"💵 **Spent (USD):** ${usd_spent:.2f}\n"
             f"📥 **Received:** {received_amt:.8f} {base_sym}\n"
             f"🏷️ **Rate:** {rate:,.2f} THB\n"
+            f"💾 **Portfolio:** {'✅ Saved' if ghostfolio_saved else '❌ Not saved'}\n"
             f"🕒 **Time:** {dt_str}\n"
             f"🆔 **Order ID:** {order_id}"
         )
         send_discord_alert(msg, is_error=False)
 
-        # 6. Update LAST_BUY_DATE in DCA_TARGET_MAP
+        # 8. Update LAST_BUY_DATE in DCA_TARGET_MAP
         if map_key and target_map:
             today_str = datetime.now(SELECTED_TZ).strftime("%Y-%m-%d")
             print(f"🔄 Updating LAST_BUY_DATE for {map_key} to {today_str}...")

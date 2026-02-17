@@ -43,7 +43,7 @@ def get_thb_usd_rate():
     print("❌ ERROR: All FX rate sources failed. USD values will be unavailable.")
     return 0.0
 
-def update_gist_log(trade_data, symbol="BTC"):
+def update_gist_log(trade_data, symbol="BTC", saved_to_ghostfolio=False):
     if not GIST_ID or not GIST_TOKEN:
         print("GIST_ID or GIST_TOKEN not set. Skipping log.")
         return
@@ -101,8 +101,11 @@ def update_gist_log(trade_data, symbol="BTC"):
         thb_price_formatted = f"฿{trade_data['price']:,.2f}"
         usd_price_formatted = f"${usd_price:,.2f}"
         
+        # Determine saved status
+        saved_status = "true" if saved_to_ghostfolio else "false"
+        
         # Format row with fixed column widths
-        row = f"| {datetime_str:20} | {thb_spent_formatted:>10} | {usd_spent_formatted:>10} | {thb_price_formatted:>16} | {usd_price_formatted:>15} | {crypto_val:18} | {'false':5} |"
+        row = f"| {datetime_str:20} | {thb_spent_formatted:>10} | {usd_spent_formatted:>10} | {thb_price_formatted:>16} | {usd_price_formatted:>15} | {crypto_val:18} | {saved_status:5} |"
         
         # Ensure newline
         if not current_content.endswith('\n'):
