@@ -95,8 +95,14 @@ def update_gist_log(trade_data, symbol="BTC"):
         # Calculate USD price per crypto unit
         usd_price = (usd_value / trade_data['amount_btc']) if trade_data['amount_btc'] > 0 else 0
         
+        # Format currency values with symbols directly next to number
+        thb_spent_formatted = f"฿{trade_data['amount_thb']:.2f}"
+        usd_spent_formatted = f"${usd_value:.2f}"
+        thb_price_formatted = f"฿{trade_data['price']:,.2f}"
+        usd_price_formatted = f"${usd_price:,.2f}"
+        
         # Format row with fixed column widths
-        row = f"| {datetime_str:20} | {trade_data['amount_thb']:>9.2f} | ${usd_value:>8.2f} | {trade_data['price']:>14,.2f} | ${usd_price:>13,.2f} | {crypto_val:18} | {'false':5} |"
+        row = f"| {datetime_str:20} | {thb_spent_formatted:>10} | {usd_spent_formatted:>10} | {thb_price_formatted:>16} | {usd_price_formatted:>15} | {crypto_val:18} | {'false':5} |"
         
         # Ensure newline
         if not current_content.endswith('\n'):
