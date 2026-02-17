@@ -72,10 +72,8 @@ def update_gist_log(trade_data, symbol="BTC"):
             current_content = ""
             
         # 2. Format new row
-        # | Date | Time | THB Spent | USD Value | Buy Price (THB) | Crypto Recv | Order ID | Logged |
         ts = datetime.fromtimestamp(trade_data['ts'], tz=SELECTED_TZ)
-        date_str = ts.strftime("%Y-%m-%d")
-        time_str = ts.strftime("%H:%M")
+        datetime_str = ts.strftime("%Y-%m-%d %H:%M %Z")
         
         # Calculate USD Value of the purchase directly from THB amount
         if fx_rate > 0:
@@ -86,7 +84,7 @@ def update_gist_log(trade_data, symbol="BTC"):
             usd_value = trade_data.get('amount_btc', 0) * trade_data.get('usd_rate', 0)
 
         # Check if header exists, if not add it
-        header_line = "| Date | Time | THB Spent | USD Value | Buy Price (THB) | Crypto Recv | Order ID | Logged |\n"
+        header_line = "| Date                 | THB Spent | USD Spent | Price (THB)    | Price (USD)    | Crypto             | Saved |\n"
         
         if "Date" not in current_content:
             current_content = header_line + current_content
@@ -94,7 +92,11 @@ def update_gist_log(trade_data, symbol="BTC"):
         # Append symbol to crypto amount for clarity (e.g. 0.0001 BTC)
         crypto_val = f"{trade_data['amount_btc']:.8f} {symbol}"
         
-        row = f"| {date_str} | {time_str} | {trade_data['amount_thb']:.2f} | ${usd_value:.2f} | {trade_data['price']:.2f} | {crypto_val} | {trade_data['order_id']} | false |"
+        # Calculate USD price per crypto unit
+        usd_price = (usd_value / trade_data['amount_btc']) if trade_data['amount_btc'] > 0 else 0
+        
+        # Format row with fixed column widths
+        row = f"| {datetime_str:20} | {trade_data['amount_thb']:>9.2f} | ${usd_value:>8.2f} | {trade_data['price']:>14,.2f} | ${usd_price:>13,.2f} | {crypto_val:18} | {'false':5} |"
         
         # Ensure newline
         if not current_content.endswith('\n'):
