@@ -3,3 +3,7 @@ __pycache__/
 .DS_Store
 .env
 venv/
+
+# Ghostfolio import script and CryptoCompare data
+ghostfolio_import.py
+Cryptocompare-All-Data.json
