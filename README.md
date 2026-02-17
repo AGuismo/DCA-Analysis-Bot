@@ -4,7 +4,7 @@ A complete system that automatically analyzes market data to find the best time 
 
 The system consists of two parts:
 1.  **The Analyst (`crypto-analysis.py`)**: Runs daily (06:00 BKK / 23:00 UTC). Analyzes **60 days** of price data across **4 periods** (14, 30, 45, 60 days) for **multiple pairs** (e.g., BTC/USDT, LINK/USDT) to find the "Champion Time" for each. Uses AI synthesis to pick optimal buy time. Updates repository variable `DCA_TARGET_MAP`.
-2.  **The Trader (`bitkub-dca.py`)**: Triggered on **push to main** or **manual dispatch**. Checks if current time matches target time for any enabled symbol. Executes market buy orders and logs to Gist.
+2.  **The Trader (`crypto-dca.py`)**: Triggered on **push to main** or **manual dispatch**. Checks if current time matches target time for any enabled symbol. Executes market buy orders and logs to Gist.
 
 ## Features
 
