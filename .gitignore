@@ -6,4 +6,5 @@ venv/
 
 # Ghostfolio import script and CryptoCompare data
 ghostfolio_import.py
+ghostfolio_cleanup.py
 Cryptocompare-All-Data.json
