@@ -227,29 +227,76 @@ def get_bitkub_prices(coin_list):
     return prices
 
 def send_discord_notification(message):
-    """Send Discord webhook notification."""
+    """Send Discord webhook notification, splitting if needed."""
     if not DISCORD_WEBHOOK_URL:
         print("⚠️ No Discord webhook URL configured")
         return
     
-    payload = {
-        "embeds": [{
-            "title": "💼 Portfolio Balance Report",
-            "description": message,
-            "color": 3447003,  # Blue
-            "timestamp": datetime.now(SELECTED_TZ).isoformat(),
-            "footer": {
-                "text": "DCA Portfolio Tracker"
-            }
-        }]
-    }
+    # Discord embed description limit is 4096 chars
+    # If message is too long, split into multiple embeds or use content field
     
-    try:
-        r = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=5)
-        r.raise_for_status()
-        print("✅ Discord notification sent")
-    except Exception as e:
-        print(f"❌ Failed to send Discord notification: {e}")
+    if len(message) <= 4000:
+        # Single embed
+        payload = {
+            "embeds": [{
+                "title": "💼 Portfolio Balance Report",
+                "description": message,
+                "color": 3447003,  # Blue
+                "timestamp": datetime.now(SELECTED_TZ).isoformat(),
+                "footer": {
+                    "text": "DCA Portfolio Tracker"
+                }
+            }]
+        }
+        
+        try:
+            r = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
+            r.raise_for_status()
+            print("✅ Discord notification sent")
+        except Exception as e:
+            print(f"❌ Failed to send Discord notification: {e}")
+    else:
+        # Split into multiple messages
+        # Find the separator between Part 1 and Part 2
+        separator = "════════════════════════════════════════"
+        
+        if separator in message:
+            parts = message.split(separator, 1)
+            part1 = parts[0].strip()
+            part2 = (separator + parts[1]).strip() if len(parts) > 1 else ""
+            
+            # Send Part 1
+            payload1 = {
+                "embeds": [{
+                    "title": "💼 Portfolio Balance Report",
+                    "description": part1,
+                    "color": 3447003,
+                    "timestamp": datetime.now(SELECTED_TZ).isoformat()
+                }]
+            }
+            
+            try:
+                r = requests.post(DISCORD_WEBHOOK_URL, json=payload1, timeout=10)
+                r.raise_for_status()
+                print("✅ Discord notification (Part 1) sent")
+                
+                # Send Part 2 if exists
+                if part2:
+                    time.sleep(0.5)  # Small delay between messages
+                    payload2 = {
+                        "embeds": [{
+                            "description": part2,
+                            "color": 3447003,
+                            "footer": {
+                                "text": "DCA Portfolio Tracker"
+                            }
+                        }]
+                    }
+                    r = requests.post(DISCORD_WEBHOOK_URL, json=payload2, timeout=10)
+                    r.raise_for_status()
+                    print("✅ Discord notification (Part 2) sent")
+            except Exception as e:
+                print(f"❌ Failed to send Discord notification: {e}")
 
 def main():
     print("--- Portfolio Balance Check ---")
