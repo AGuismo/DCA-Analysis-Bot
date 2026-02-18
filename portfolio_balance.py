@@ -104,16 +104,71 @@ def get_balances():
     
     return result.get('result', {})
 
-def get_ticker():
-    """Fetch current market prices."""
+def get_global_prices(coin_list):
+    """Fetch global market prices from CoinGecko API."""
+    # Map common symbols to CoinGecko IDs
+    symbol_to_id = {
+        'BTC': 'bitcoin',
+        'ETH': 'ethereum',
+        'LINK': 'chainlink',
+        'ADA': 'cardano',
+        'DOT': 'polkadot',
+        'MATIC': 'matic-network',
+        'SOL': 'solana',
+        'AVAX': 'avalanche-2',
+        'UNI': 'uniswap',
+        'AAVE': 'aave',
+        'ATOM': 'cosmos',
+        'XRP': 'ripple',
+        'DOGE': 'dogecoin',
+        'LTC': 'litecoin',
+        'BCH': 'bitcoin-cash',
+        'XLM': 'stellar',
+        'ALGO': 'algorand',
+        'VET': 'vechain',
+        'FIL': 'filecoin',
+        'SAND': 'the-sandbox',
+        'MANA': 'decentraland',
+        'AXS': 'axie-infinity',
+        'SHIB': 'shiba-inu',
+        'CRO': 'crypto-com-chain',
+        'NEAR': 'near',
+        'APE': 'apecoin',
+        'LDO': 'lido-dao',
+        'ARB': 'arbitrum',
+        'OP': 'optimism',
+    }
+    
+    # Convert symbols to CoinGecko IDs
+    coin_ids = []
+    for coin in coin_list:
+        if coin.upper() in symbol_to_id:
+            coin_ids.append(symbol_to_id[coin.upper()])
+        else:
+            # Try lowercase as fallback
+            coin_ids.append(coin.lower())
+    
+    if not coin_ids:
+        return {}
+    
     try:
-        r = requests.get(f"{BASE_URL}/api/market/ticker", timeout=10)
+        ids_param = ','.join(coin_ids)
+        url = f"https://api.coingecko.com/api/v3/simple/price?ids={ids_param}&vs_currencies=thb"
+        r = requests.get(url, timeout=10)
         r.raise_for_status()
         data = r.json()
-        print(f"✅ Fetched ticker data for {len(data)} trading pairs")
-        return data
+        
+        # Convert back to symbol-based dict
+        prices = {}
+        for coin in coin_list:
+            coin_id = symbol_to_id.get(coin.upper(), coin.lower())
+            if coin_id in data and 'thb' in data[coin_id]:
+                prices[coin.upper()] = data[coin_id]['thb']
+        
+        print(f"✅ Fetched global prices for {len(prices)} coins from CoinGecko")
+        return prices
     except Exception as e:
-        print(f"⚠️ Failed to fetch ticker: {e}")
+        print(f"⚠️ Failed to fetch global prices: {e}")
         return {}
 
 def send_discord_notification(message):
@@ -187,8 +242,8 @@ def main():
         send_discord_notification(error_msg)
         return
     
-    # Fetch current prices
-    ticker = get_ticker()
+    # Fetch current prices from global market
+    global_prices = get_global_prices(coins)
     
     # Get FX rate
     fx_rate = get_thb_usd_rate()
@@ -212,19 +267,13 @@ def main():
             # Skip coins with zero balance
             continue
         
-        # Get current price
-        symbol = f"THB_{coin}"  # Bitkub uses THB_BTC format
-        price_thb = 0
+        # Get current price from global market
+        price_thb = global_prices.get(coin.upper(), 0)
         
-        if symbol in ticker:
-            price_data = ticker[symbol]
-            if isinstance(price_data, dict):
-                price_thb = float(price_data.get('last', 0))
-            else:
-                price_thb = float(price_data)
-            print(f"✓ {symbol}: ฿{price_thb:,.2f}")
+        if price_thb > 0:
+            print(f"✓ {coin}: ฿{price_thb:,.2f} (global market)")
         else:
-            print(f"⚠️ No ticker data for {symbol}")
+            print(f"⚠️ No price data for {coin}")
         
         # Calculate values
         value_thb = balance * price_thb
