@@ -71,23 +71,29 @@ def bitkub_request(method, endpoint, payload=None):
 
 def get_thb_usd_rate():
     """Get THB to USD exchange rate from multiple sources."""
-    sources = [
-        ("https://api.exchangerate-api.com/v4/latest/THB", lambda r: r.json().get("rates", {}).get("USD", 0)),
-        ("https://open.er-api.com/v6/latest/THB", lambda r: r.json().get("rates", {}).get("USD", 0)),
-    ]
-    
-    for url, parser in sources:
-        try:
-            r = requests.get(url, timeout=5)
-            rate = parser(r)
-            if rate > 0:
-                return rate
-        except:
-            continue
-    
-    # Fallback: Use approximate rate
-    print("⚠️ All FX APIs failed. Using fallback rate 1 THB = 0.028 USD")
-    return 0.028
+    # Try primary source (Frankfurter)
+    try:
+        url = "https://api.frankfurter.app/latest?from=THB&to=USD"
+        r = requests.get(url, timeout=5)
+        data = r.json()
+        if 'rates' in data and 'USD' in data['rates']:
+            return float(data['rates']['USD'])
+    except Exception as e:
+        print(f"Primary FX source failed: {e}")
+
+    # Try secondary source (Open Exchange Rate API)
+    try:
+        url = "https://open.er-api.com/v6/latest/THB"
+        r = requests.get(url, timeout=5)
+        data = r.json()
+        if 'rates' in data and 'USD' in data['rates']:
+            return float(data['rates']['USD'])
+    except Exception as e:
+        print(f"Secondary FX source failed: {e}")
+
+    # All sources failed - return 0
+    print("❌ ERROR: All FX rate sources failed. USD values will be unavailable.")
+    return 0.0
 
 def get_balances():
     """Fetch wallet balances from Bitkub."""
@@ -101,9 +107,13 @@ def get_balances():
 def get_ticker():
     """Fetch current market prices."""
     try:
-        r = requests.get(f"{BASE_URL}/api/market/ticker", timeout=5)
-        return r.json()
-    except:
+        r = requests.get(f"{BASE_URL}/api/market/ticker", timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        print(f"✅ Fetched ticker data for {len(data)} pairs")
+        return data
+    except Exception as e:
+        print(f"⚠️ Failed to fetch ticker: {e}")
         return {}
 
 def send_discord_notification(message):
@@ -194,7 +204,13 @@ def main():
         price_thb = 0
         
         if symbol in ticker:
-            price_thb = float(ticker[symbol].get('last', 0))
+            price_data = ticker[symbol]
+            if isinstance(price_data, dict):
+                price_thb = float(price_data.get('last', 0))
+            else:
+                price_thb = float(price_data)
+        else:
+            print(f"⚠️ No ticker data for {symbol}")
         
         # Calculate values
         value_thb = balance * price_thb
