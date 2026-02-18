@@ -124,7 +124,7 @@ def log_to_ghostfolio(trade_data, symbol, account_id):
         # 3. Format comment with Thai and USD amounts
         thb_spent = trade_data['amount_thb']
         usd_spent = trade_data['amount_usd']
-        comment = f"฿{thb_spent:.2f} - ${usd_spent:.2f}"
+        comment = f"฿{thb_spent:.2f} - ${usd_spent:.2f} - {trade_data['order_id']}"
         
         # 4. Format quantity to 8 decimals
         quantity = float(f"{trade_data['amount_crypto']:.8f}")
