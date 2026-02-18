@@ -1,6 +1,7 @@
 import os
 import requests
 from datetime import datetime, timedelta
+from bitkub_client import get_thb_usd_rate
 
 # Gist Logging Configuration
 GIST_ID = os.environ.get("GIST_ID")
@@ -16,32 +17,6 @@ except ImportError:
     from datetime import timezone
     SELECTED_TZ = timezone(timedelta(hours=7))
     print(f"⚠️ zoneinfo not available. Using UTC+7 offset as fallback for {TIMEZONE_NAME}") 
-
-def get_thb_usd_rate():
-    # Try primary source (Frankfurter)
-    try:
-        url = "https://api.frankfurter.app/latest?from=THB&to=USD"
-        r = requests.get(url, timeout=5)
-        # Frankfurt might return empty if closed market but usually returns last rate.
-        data = r.json()
-        if 'rates' in data and 'USD' in data['rates']:
-            return float(data['rates']['USD'])
-    except Exception as e:
-        print(f"Primary FX source failed: {e}")
-
-    # Try secondary source (Open Exchange Rate API)
-    try:
-        url = "https://open.er-api.com/v6/latest/THB"
-        r = requests.get(url, timeout=5)
-        data = r.json()
-        if 'rates' in data and 'USD' in data['rates']:
-             return float(data['rates']['USD'])
-    except Exception as e:
-         print(f"Secondary FX source failed: {e}")
-
-    # All sources failed - return 0
-    print("❌ ERROR: All FX rate sources failed. USD values will be unavailable.")
-    return 0.0
 
 def update_gist_log(trade_data, symbol="BTC", saved_to_ghostfolio=False):
     if not GIST_ID or not GIST_TOKEN:

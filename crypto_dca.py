@@ -1,48 +1,31 @@
 import os
 import time
 import json
-import hmac
-import hashlib
 import requests
-import sys
 from datetime import datetime, timedelta
-from gist_logger import update_gist_log, get_thb_usd_rate
+from gist_logger import update_gist_log
+from bitkub_client import bitkub_request, get_thb_usd_rate
 
 # --- Configuration ---
-API_KEY = os.environ.get("BITKUB_API_KEY")
-API_SECRET = os.environ.get("BITKUB_API_SECRET")
-
 # Timezone Configuration
 TIMEZONE_NAME = os.environ.get("TIMEZONE", "Asia/Bangkok")
 try:
     from zoneinfo import ZoneInfo
     SELECTED_TZ = ZoneInfo(TIMEZONE_NAME)
 except ImportError:
-    # Fallback for Python < 3.9 or missing tzdata
     from datetime import timezone
-    # Parse timezone offset (assume UTC+7 for Bangkok as fallback)
-    # This is a simplification - for production, consider pytz
     SELECTED_TZ = timezone(timedelta(hours=7))
     print(f"⚠️ zoneinfo not available. Using UTC+7 offset as fallback for {TIMEZONE_NAME}")
 
 # Default settings (fallback)
-DEFAULT_DCA_AMOUNT = 20.0 # Default trade amount if missing in JSON
+DEFAULT_DCA_AMOUNT = 20.0
 DEFAULT_TARGET_TIME = os.environ.get("DCA_TARGET_TIME", "07:00")
 
 # Target Map (JSON String)
-# New Format: {"BTC_THB": {"TIME": "07:00", "AMOUNT": 800, "BUY_ENABLED": true, "LAST_BUY_DATE": ""}}
+# Format: {"BTC_THB": {"TIME": "07:00", "AMOUNT": 800, "BUY_ENABLED": true, "LAST_BUY_DATE": ""}}
 DCA_TARGET_MAP_JSON = os.environ.get("DCA_TARGET_MAP", "{}")
 
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
-BASE_URL = "https://api.bitkub.com"
-
-def get_server_time():
-    """Fetch server timestamp to ensure sync."""
-    try:
-        r = requests.get(f"{BASE_URL}/api/v3/servertime", timeout=5)
-        return int(r.text)
-    except:
-        return int(time.time())
 
 def send_discord_alert(message, is_error=False):
     if not DISCORD_WEBHOOK_URL:
@@ -161,62 +144,6 @@ def is_time_to_trade(target_time_str):
         return True
         
     return False
-
-def bitkub_request(method, endpoint, payload=None):
-    if not API_KEY or not API_SECRET:
-        # raise ValueError("Missing BITKUB_API_KEY or BITKUB_API_SECRET")
-        pass # Allow running without keys for testing time logic (will fail later on execute)
-
-    ts = str(get_server_time())
-    payload_str = json.dumps(payload, separators=(',', ':')) if payload else ''
-    sig_message = f"{ts}{method}{endpoint}{payload_str}"
-    
-    signature = ""
-    if API_SECRET:
-        signature = hmac.new(
-            API_SECRET.encode('utf-8'),
-            sig_message.encode('utf-8'),
-            hashlib.sha256
-        ).hexdigest()
-    
-    headers = {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'X-BTK-APIKEY': API_KEY or "",
-        'X-BTK-TIMESTAMP': ts,
-        'X-BTK-SIGN': signature
-    }
-    
-    url = BASE_URL + endpoint
-    # print(f"Sending {method} to {url}...") # Verbose
-    try:
-        response = requests.request(method, url, headers=headers, data=payload_str, timeout=10)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.HTTPError as e:
-        try:
-            err_json = response.json()
-            error_code = err_json.get('error', 'Unknown')
-            # raise Exception(f"Bitkub API Error {error_code}: {err_json}")
-            return err_json # Return error dict instead of exception to handle gracefully
-        except:
-            raise e
-
-import subprocess
-
-def update_repo_variable(map_key, new_last_buy_date):
-    """
-    Updates the DCA_TARGET_MAP variable in the GitHub repository.
-    Because we can't easily modify one key in the JSON via gh cli,
-    we have to read the current full map, update it locally, and push the whole JSON.
-    NOTE: This is tricky with reading env vars vs repo vars.
-    We'll rely on generating a new JSON string valid for the NEXT run.
-    """
-    # 1. Load Current Map
-    # We must use the 'current' map loaded in memory, update it, and push back.
-    # But wait, main() has the map. We need to pass it or reload it?
-    # Better: This function takes the *whole* map object, modifies it, and pushes.
-    pass 
 
 def save_last_buy_date(target_map, symbol_key, date_str):
     """
@@ -341,27 +268,11 @@ def execute_trade(symbol, amount_thb, map_key=None, target_map=None):
         # 2. Wait
         time.sleep(5) 
 
-        # 3. Fetch Details
-        info_params = f"sym={symbol}&id={order_id}&sd=buy"
-        path_query = f"/api/v3/market/order-info?{info_params}"
-        ts = str(get_server_time())
-        sig_msg = f"{ts}GET{path_query}"
-        
-        sig = ""
-        if API_SECRET:
-             sig = hmac.new(API_SECRET.encode('utf-8'), sig_msg.encode('utf-8'), hashlib.sha256).hexdigest()
-        
-        headers = {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-            'X-BTK-APIKEY': API_KEY,
-            'X-BTK-TIMESTAMP': ts,
-            'X-BTK-SIGN': sig
-        }
-        
-        r_info = requests.get(BASE_URL + path_query, headers=headers, timeout=10)
-        r_info.raise_for_status()
-        order_data = r_info.json().get('result', {})
+        # 3. Fetch order details via shared client (params dict form)
+        order_data = bitkub_request(
+            'GET', '/api/v3/market/order-info',
+            params={"sym": symbol, "id": order_id, "sd": "buy"}
+        ).get('result', {})
         
         spent_thb = float(order_data.get('filled', 0))
         if spent_thb == 0: spent_thb = float(order_data.get('total', 0))
@@ -464,7 +375,7 @@ def main():
     # Parse Target Map
     try:
         target_map = json.loads(DCA_TARGET_MAP_JSON)
-    except:
+    except Exception:
         print("⚠️ Failed to parse DCA_TARGET_MAP JSON. Using empty map.")
         target_map = {}
 

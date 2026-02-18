@@ -178,7 +178,7 @@ if __name__ == "__main__":
         # Load account map
         try:
             portfolio_map = json.loads(PORTFOLIO_ACCOUNT_MAP_JSON)
-        except:
+        except Exception:
             print("⚠️ Failed to parse PORTFOLIO_ACCOUNT_MAP. Using empty map.")
             portfolio_map = {}
         

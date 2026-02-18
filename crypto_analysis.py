@@ -2,7 +2,6 @@ import ccxt
 import pandas as pd
 import requests
 import os
-import sys
 import re
 import json
 import google.generativeai as genai
@@ -32,8 +31,15 @@ DCA_TARGET_MAP_ENV = os.environ.get("DCA_TARGET_MAP", "{}")
 SHORT_REPORT = os.environ.get("SHORT_REPORT", "true").lower() == "true"
 try:
     EXISTING_MAP = json.loads(DCA_TARGET_MAP_ENV)
-except:
+except Exception:
     EXISTING_MAP = {}
+
+
+# --- Helpers ---
+
+def _harmonic_mean(series):
+    """Harmonic mean of a numeric series — used for DCA price averaging."""
+    return len(series) / (1 / series).sum()
 
 
 # --- Fetch helper ---
@@ -107,12 +113,8 @@ def analyze_period(df, days, local_tz):
     # C. Group by time
     dca_group = period_df.groupby("local_time")
 
-    # Harmonic Mean function for DCA price
-    def harmonic_mean(series):
-        return len(series) / (1 / series).sum()
-
     dca_stats = dca_group.agg(
-        dca_price=("close", harmonic_mean),
+        dca_price=("close", _harmonic_mean),
         median_miss=("miss_pct", "median"),
         win_rate=("is_snipe", "mean")
     ).reset_index().rename(columns={"local_time": "time"})
@@ -233,7 +235,6 @@ def send_to_discord(report_content):
 
 def main():
     exchange = getattr(ccxt, EXCHANGE_ID)({"enableRateLimit": True})
-    results_map = {}
 
     for symbol in SYMBOLS:
         print(f"\nExample: PROCESSING {symbol}...")
@@ -327,7 +328,7 @@ def main():
                     if ai_time != final_time:
                         log(f"🔄 Switching target from {final_time} (Math) to {ai_time} (AI)", summary_only=True)
                         final_time = ai_time
-                        source_method = f"🤖 AI Recommendation"
+                        source_method = "🤖 AI Recommendation"
                     else:
                         log("✅ AI agrees with Quantitative Analysis.", summary_only=True)
                         source_method = f"🤝 Consensus (AI + Math)"
@@ -346,23 +347,9 @@ def main():
 
             # Send individual report per symbol
             send_to_discord(full_report)
-            
-            # Map symbol to final time
-            # Convert exchange symbol (BTC/USDT) to matching env key format if needed (BTC_THB)
-            # Strategy: We assume the user provides specific pairs. 
-            # If input is BTC/USDT, we map it to BTC_THB for the trader if that's the convention,
-            # OR we just store it as is and let the trader handle the mapping.
-            # Ideally the trader looks up by its own SYMBOL env var. 
-            # Start simpl: Use the input symbol as the key.
-            if final_time:
-                log(f"\n🎯 FINAL DECISION for {symbol}: {final_time}")
-                
-                # Update Strategy:
-                # 1. Try to find an existing entry for this symbol (BTC/USDT or BTC_THB)
-                # 2. If it's a dict, update ["TIME"].
-                # 3. If it's a string, update the string value.
-                # 4. If missing, create a new dict entry with default settings.
 
+            # Map symbol to final time (BTC/USDT -> BTC_THB key in EXISTING_MAP)
+            if final_time:
                 # Normalize to THB key if possible (e.g., BTC/USDT -> BTC_THB)
                 base = symbol.split('/')[0]
                 thb_key = f"{base}_THB"

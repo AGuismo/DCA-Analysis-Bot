@@ -4,18 +4,15 @@ Fetches balances for all coins in DCA_TARGET_MAP and sends Discord notification
 """
 import os
 import json
-import hmac
-import hashlib
 import requests
 import time
 from datetime import datetime, timedelta
 
+from bitkub_client import bitkub_request, get_thb_usd_rate, get_historical_thb_usd_rate
+
 # Configuration
-API_KEY = os.environ.get("BITKUB_API_KEY")
-API_SECRET = os.environ.get("BITKUB_API_SECRET")
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 DCA_TARGET_MAP_JSON = os.environ.get("DCA_TARGET_MAP", "{}")
-BASE_URL = "https://api.bitkub.com"
 SHORT_REPORT = os.environ.get("SHORT_REPORT", "true").lower() == "true"
 
 # Timezone Configuration
@@ -27,104 +24,6 @@ except ImportError:
     from datetime import timezone
     SELECTED_TZ = timezone(timedelta(hours=7))
 
-def get_server_time():
-    """Fetch server timestamp to ensure sync."""
-    try:
-        r = requests.get(f"{BASE_URL}/api/v3/servertime", timeout=5)
-        return int(r.text)
-    except:
-        return int(time.time())
-
-def bitkub_request(method, endpoint, payload=None, params=None):
-    """Make authenticated request to Bitkub API."""
-    if not API_KEY or not API_SECRET:
-        raise ValueError("Missing BITKUB_API_KEY or BITKUB_API_SECRET")
-
-    ts = str(get_server_time())
-    
-    # For GET requests with query params, build query string
-    query_string = ''
-    if method == 'GET' and params:
-        query_string = '&'.join([f"{k}={v}" for k, v in params.items()])
-        sig_path = f"{endpoint}?{query_string}" if query_string else endpoint
-    else:
-        sig_path = endpoint
-    
-    # Build payload for POST requests
-    payload_str = json.dumps(payload, separators=(',', ':')) if payload else ''
-    
-    # Signature message
-    sig_message = f"{ts}{method}{sig_path}{payload_str}"
-    
-    signature = hmac.new(
-        API_SECRET.encode('utf-8'),
-        sig_message.encode('utf-8'),
-        hashlib.sha256
-    ).hexdigest()
-    
-    headers = {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'X-BTK-APIKEY': API_KEY,
-        'X-BTK-TIMESTAMP': ts,
-        'X-BTK-SIGN': signature
-    }
-    
-    url = BASE_URL + sig_path
-    try:
-        if method == 'GET':
-            response = requests.get(url, headers=headers, timeout=10)
-        else:
-            response = requests.request(method, url, headers=headers, data=payload_str, timeout=10)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.HTTPError as e:
-        try:
-            err_json = response.json()
-            return err_json
-        except:
-            raise e
-
-def get_thb_usd_rate():
-    """Get THB to USD exchange rate from multiple sources."""
-    # Try primary source (Frankfurter)
-    try:
-        url = "https://api.frankfurter.app/latest?from=THB&to=USD"
-        r = requests.get(url, timeout=5)
-        data = r.json()
-        if 'rates' in data and 'USD' in data['rates']:
-            return float(data['rates']['USD'])
-    except Exception as e:
-        print(f"Primary FX source failed: {e}")
-
-    # Try secondary source (Open Exchange Rate API)
-    try:
-        url = "https://open.er-api.com/v6/latest/THB"
-        r = requests.get(url, timeout=5)
-        data = r.json()
-        if 'rates' in data and 'USD' in data['rates']:
-            return float(data['rates']['USD'])
-    except Exception as e:
-        print(f"Secondary FX source failed: {e}")
-
-    # All sources failed - return 0
-    print("❌ ERROR: All FX rate sources failed. USD values will be unavailable.")
-    return 0.0
-
-def get_historical_thb_usd_rate(date_str):
-    """Get historical THB to USD rate for a specific date (YYYY-MM-DD)."""
-    # Try Frankfurter for historical rates
-    try:
-        url = f"https://api.frankfurter.app/{date_str}?from=THB&to=USD"
-        r = requests.get(url, timeout=5)
-        data = r.json()
-        if 'rates' in data and 'USD' in data['rates']:
-            return float(data['rates']['USD'])
-    except Exception as e:
-        pass
-    
-    # Fallback to current rate if historical fails
-    return get_thb_usd_rate()
 
 def get_balances():
     """Fetch wallet balances from Bitkub."""
@@ -407,7 +306,7 @@ def main():
     # Parse DCA target map to get coins
     try:
         target_map = json.loads(DCA_TARGET_MAP_JSON)
-    except:
+    except Exception:
         print("⚠️ Failed to parse DCA_TARGET_MAP. Using empty map.")
         target_map = {}
     

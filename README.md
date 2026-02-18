@@ -2,10 +2,22 @@
 
 A complete system that automatically analyzes market data to find the best time of day to buy for **multiple cryptocurrencies**, and then executes trades automatically on your configured exchange.
 
-The system consists of three parts:
-1.  **The Analyst (`crypto_analysis.py`)**: Runs daily (06:00 BKK / 23:00 UTC). Analyzes **60 days** of price data across **4 periods** (14, 30, 45, 60 days) for **multiple pairs** (e.g., BTC/USDT, LINK/USDT) to find the "Champion Time" for each. Uses AI synthesis to pick optimal buy time. Updates repository variable `DCA_TARGET_MAP`.
-2.  **The Trader (`crypto_dca.py`)**: Triggered on **push to main** or **manual dispatch**. Checks if current time matches target time for any enabled symbol. Executes market buy orders and logs to Gist.
-3.  **The Balance Checker (`portfolio_balance.py`)**: Runs **on every push** and **weekly on Sundays at noon BKK**. Fetches balances for all configured coins, calculates portfolio value in THB and USD, sends Discord report.
+The system consists of the following files:
+
+| File | Role |
+|------|------|
+| `bitkub_client.py` | Shared API client — HMAC signing, server-time sync, FX rates. Used by all other modules. |
+| `crypto_analysis.py` | Daily market analysis using CCXT + Gemini AI. Updates `DCA_TARGET_MAP` with optimal buy times. |
+| `crypto_dca.py` | Trade executor — reads `DCA_TARGET_MAP`, places market buy orders, logs to Gist + Ghostfolio. |
+| `portfolio_balance.py` | Portfolio reporter — fetches balances, calculates THB/USD value, sends Discord report. |
+| `portfolio_logger.py` | Logs individual trades to Ghostfolio portfolio tracker. |
+| `gist_logger.py` | Appends trade records to a GitHub Gist as a markdown ledger. |
+
+**Workflows** (`.github/workflows/`):
+
+1. **`crypto_analysis.yml`** — Runs daily (06:00 BKK / 23:00 UTC). Analyzes **60 days** of price data across **4 periods** (14, 30, 45, 60 days) for **multiple pairs** (e.g., BTC/USDT, LINK/USDT) to find the "Champion Time" for each. Uses AI synthesis to pick optimal buy time. Updates `DCA_TARGET_MAP`.
+2. **`daily_dca.yml`** — Triggered on **push to main** or **manual dispatch**. Checks if current time matches target time for any enabled symbol. Executes market buy orders.
+3. **`portfolio_check.yml`** — Runs **on every push** and **weekly on Sundays at noon BKK**. Fetches balances for all configured coins, calculates portfolio value in THB and USD, sends Discord report.
 
 ## Features
 
