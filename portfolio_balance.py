@@ -34,14 +34,26 @@ def get_server_time():
     except:
         return int(time.time())
 
-def bitkub_request(method, endpoint, payload=None):
+def bitkub_request(method, endpoint, payload=None, params=None):
     """Make authenticated request to Bitkub API."""
     if not API_KEY or not API_SECRET:
         raise ValueError("Missing BITKUB_API_KEY or BITKUB_API_SECRET")
 
     ts = str(get_server_time())
+    
+    # For GET requests with query params, build query string
+    query_string = ''
+    if method == 'GET' and params:
+        query_string = '&'.join([f"{k}={v}" for k, v in params.items()])
+        sig_path = f"{endpoint}?{query_string}" if query_string else endpoint
+    else:
+        sig_path = endpoint
+    
+    # Build payload for POST requests
     payload_str = json.dumps(payload, separators=(',', ':')) if payload else ''
-    sig_message = f"{ts}{method}{endpoint}{payload_str}"
+    
+    # Signature message
+    sig_message = f"{ts}{method}{sig_path}{payload_str}"
     
     signature = hmac.new(
         API_SECRET.encode('utf-8'),
@@ -57,9 +69,12 @@ def bitkub_request(method, endpoint, payload=None):
         'X-BTK-SIGN': signature
     }
     
-    url = BASE_URL + endpoint
+    url = BASE_URL + sig_path
     try:
-        response = requests.request(method, url, headers=headers, data=payload_str, timeout=10)
+        if method == 'GET':
+            response = requests.get(url, headers=headers, timeout=10)
+        else:
+            response = requests.request(method, url, headers=headers, data=payload_str, timeout=10)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.HTTPError as e:
@@ -120,12 +135,12 @@ def get_balances():
     return result.get('result', {})
 
 def get_order_history(symbol, limit=100):
-    """Fetch order history for a specific symbol."""
-    payload = {
+    """Fetch order history for a specific symbol using GET endpoint."""
+    params = {
         "sym": symbol,
-        "lmt": limit
+        "lmt": str(limit)
     }
-    result = bitkub_request('POST', '/api/v3/market/my-order-history', payload)
+    result = bitkub_request('GET', '/api/v3/market/my-order-history', params=params)
     
     if result.get('error') != 0:
         print(f"⚠️ Failed to fetch order history for {symbol}: Error {result.get('error')}")
@@ -149,20 +164,27 @@ def aggregate_buy_orders(coins, days=7.5):
         buy_orders = []
         for order in orders:
             order_time = order.get('ts', 0)
-            if order.get('side') == 'buy' and order.get('filled', 0) > 0 and order_time >= cutoff_time:
-                rate = float(order.get('rate', 0))
-                filled_thb = float(order.get('filled', 0))
-                amount_crypto = filled_thb / rate if rate > 0 else 0
+            # Convert milliseconds to seconds if needed
+            if order_time > 10000000000:
+                order_time = order_time // 1000
+                
+            if order.get('side') == 'buy' and order_time >= cutoff_time:
+                # For buy orders, 'amount' is the THB amount spent
+                amount_thb = float(order.get('amount', 0))
+                rate_thb = float(order.get('rate', 0))
+                
+                # Calculate crypto amount: THB amount / rate
+                amount_crypto = amount_thb / rate_thb if rate_thb > 0 else 0
                 
                 # Get historical USD rate for this trade date
                 trade_date = datetime.fromtimestamp(order_time, tz=SELECTED_TZ).strftime('%Y-%m-%d')
                 historical_fx = get_historical_thb_usd_rate(trade_date)
                 
                 buy_orders.append({
-                    'order_id': order.get('id', 'N/A'),
+                    'order_id': order.get('order_id', 'N/A'),
                     'amount_crypto': amount_crypto,
-                    'amount_thb': filled_thb,
-                    'rate_thb': rate,
+                    'amount_thb': amount_thb,
+                    'rate_thb': rate_thb,
                     'timestamp': order_time,
                     'fx_rate': historical_fx  # Store the historical FX rate
                 })
