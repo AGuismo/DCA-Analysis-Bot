@@ -1,0 +1,46 @@
+name: Portfolio Balance Check
+
+on:
+  # Run on every push to main
+  push:
+    branches: [ "main" ]
+  
+  # Run weekly on Sunday at noon Bangkok time (05:00 UTC = 12:00 Bangkok UTC+7)
+  schedule:
+    - cron: '0 5 * * 0'
+  
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  check_balance:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: pip install --upgrade pip && pip install requests
+      # Only install 'requests' - portfolio_balance.py doesn't need pandas/other heavy deps
+
+    - name: Check Portfolio Balance
+      env:
+        # API credentials
+        BITKUB_API_KEY: ${{ secrets.BITKUB_API_KEY }}
+        BITKUB_API_SECRET: ${{ secrets.BITKUB_API_SECRET }}
+        
+        # Discord notification
+        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        
+        # Configuration
+        DCA_TARGET_MAP: ${{ vars.DCA_TARGET_MAP }}
+        TIMEZONE: ${{ vars.TIMEZONE || 'Asia/Bangkok' }}
+        
+      run: python portfolio_balance.py

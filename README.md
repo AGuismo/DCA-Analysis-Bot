@@ -2,14 +2,16 @@
 
 A complete system that automatically analyzes market data to find the best time of day to buy for **multiple cryptocurrencies**, and then executes trades automatically on your configured exchange.
 
-The system consists of two parts:
+The system consists of three parts:
 1.  **The Analyst (`crypto-analysis.py`)**: Runs daily (06:00 BKK / 23:00 UTC). Analyzes **60 days** of price data across **4 periods** (14, 30, 45, 60 days) for **multiple pairs** (e.g., BTC/USDT, LINK/USDT) to find the "Champion Time" for each. Uses AI synthesis to pick optimal buy time. Updates repository variable `DCA_TARGET_MAP`.
 2.  **The Trader (`crypto-dca.py`)**: Triggered on **push to main** or **manual dispatch**. Checks if current time matches target time for any enabled symbol. Executes market buy orders and logs to Gist.
+3.  **The Balance Checker (`portfolio_balance.py`)**: Runs **on every push** and **weekly on Sundays at noon BKK**. Fetches balances for all configured coins, calculates portfolio value in THB and USD, sends Discord report.
 
 ## Features
 
 - **Multi-Symbol Support**: Analyze and trade multiple pairs independently (e.g., BTC at 23:00, LINK at 23:45).
 - **Self-Optimizing**: Buy time adjusts daily based on 60-day historical analysis with AI-powered recommendations.
+- **Portfolio Balance Tracking**: Automatic balance checking and reporting via Discord with real-time valuations in THB and USD.
 - **Multi-Layer Safeguards**: Prevents double-buying with `LAST_BUY_DATE` tracking and workflow concurrency control.
 - **Detailed Logging**: All trades logged to GitHub Gist with THB and USD amounts for portfolio tracking.
 - **Portfolio Integration**: Automatic trade logging to Ghostfolio portfolio tracker with 8-decimal precision and timezone-aware timestamps.
@@ -56,6 +58,12 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository vari
 - **Safeguards**: Multiple layers check `BUY_ENABLED`, `LAST_BUY_DATE`, and time window
 - **Rationale**: Manual dispatch gives you full control over when trades execute. Analysis updates DCA_TARGET_MAP daily, but you decide when to run the trader
 
+**Portfolio Balance Workflow (`portfolio_check.yml`)**:
+- **Schedule**: Weekly on Sundays at 12:00 noon Bangkok (05:00 UTC)
+- **Trigger**: Also runs on every push to main + manual dispatch available
+- **Optimized**: Only installs minimal dependencies (requests library), uses pip caching for speed
+- **Report**: Fetches balances for all coins in DCA_TARGET_MAP, calculates portfolio value, sends Discord notification
+
 ## How It Works
 
 ### Daily Analysis Cycle
@@ -79,6 +87,42 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository vari
 11. Updates `LAST_BUY_DATE` with 3 retries (fails loudly on error)
 
 **Why Manual Dispatch?**: The system intentionally has NO automatic cron schedule on the trader workflow. This gives you complete control over trade execution timing. While analysis runs daily to update optimal buy times, you decide when to actually execute trades.
+
+## Portfolio Balance Reporting
+
+The balance checker provides automated portfolio tracking and valuation:
+
+### Features
+- **Multi-Coin Support**: Automatically fetches balances for all coins in `DCA_TARGET_MAP`
+- **Real-Time Pricing**: Gets current market prices from Bitkub API
+- **Dual Currency**: Shows values in both THB and USD
+- **Automated Reports**: Runs weekly on Sundays at noon + on every push
+- **Discord Notifications**: Formatted report with individual coin balances and total portfolio value
+
+### Report Format
+```
+💼 Portfolio Balance Report
+
+**BTC**
+  Amount: 0.12345678
+  Price: 2,109,089.86 THB
+  Value: 260,345.67 THB ($7,289.69)
+
+**LINK**
+  Amount: 150.00000000
+  Price: 523.45 THB
+  Value: 78,517.50 THB ($2,198.49)
+
+────────────────────────────────────────
+💰 Total Portfolio Value
+  THB: 338,863.17 ฿
+  USD: $9,488.18
+```
+
+### Schedule
+- **Weekly**: Every Sunday at 12:00 noon Bangkok time
+- **On Push**: After every commit to main branch
+- **Manual**: Can be triggered via GitHub Actions UI
 
 ## Currency Conversion
 
