@@ -45,7 +45,7 @@ jobs:
         EXCHANGE_ID: "binanceus"
         # Combine inputs with a default list for scheduled runs
         SYMBOL: ${{ inputs.symbol || 'BTC/USDT, LINK/USDT' }}
-      run: python crypto-analysis.py
+      run: python crypto_analysis.py
 
     - name: Update Repository Variable
       if: success() && steps.analysis.outputs.best_time_map != ''

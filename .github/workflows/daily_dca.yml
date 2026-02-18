@@ -124,5 +124,5 @@ jobs:
         # Timezone for logging/checks
         TIMEZONE: ${{ vars.TIMEZONE || 'Asia/Bangkok' }}
         
-      run: python crypto-dca.py
+      run: python crypto_dca.py
 
