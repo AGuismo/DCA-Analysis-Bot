@@ -66,6 +66,9 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository vari
 - **Schedule**: Weekly on Sundays at 12:00 noon Bangkok (05:00 UTC)
 - **Trigger**: Also runs on every push to main + manual dispatch available
 - **Optimized**: Only installs minimal dependencies (requests library), uses pip caching for speed
+- **Report Mode**: Adaptive based on trigger
+  - **Short Report (push)**: Current holdings and total value only - fast status check
+  - **Full Report (schedule/manual)**: Includes 7.5 days trade history + order details
 - **Report**: Fetches balances for all coins in DCA_TARGET_MAP, calculates portfolio value, sends Discord notification
 
 ## How It Works
@@ -101,33 +104,51 @@ The balance checker provides automated portfolio tracking and valuation:
 - **Multi-Coin Support**: Automatically fetches balances for all coins in `DCA_TARGET_MAP`
 - **Real-Time Pricing**: Gets current market prices from Bitkub API
 - **Dual Currency**: Shows values in both THB and USD
+- **Configurable Report Verbosity**: Short (balance only) or full (with trade history)
 - **Automated Reports**: Runs weekly on Sundays at noon + on every push
 - **Discord Notifications**: Formatted report with individual coin balances and total portfolio value
 
 ### Report Format
+
+**Short Report** (on push):
 ```
-💼 Portfolio Balance Report
+📊 CURRENT HOLDINGS
 
-**BTC**
-  Amount: 0.12345678
-  Price: 2,109,089.86 THB
-  Value: 260,345.67 THB ($7,289.69)
+BTC
+  Amount: 0.00084835
+  Price: ฿2,113,889.19
+  Value: ฿1,793.32 ($57.41)
 
-**LINK**
-  Amount: 150.00000000
-  Price: 523.45 THB
-  Value: 78,517.50 THB ($2,198.49)
+LINK
+  Amount: 5.01449152
+  Price: ฿277.11
+  Value: ฿1,389.57 ($44.48)
 
-────────────────────────────────────────
 💰 Total Portfolio Value
-  THB: 338,863.17 ฿
-  USD: $9,488.18
+฿3,182.88
+$101.89
+```
+
+**Full Report** (weekly schedule or manual):
+Includes all of the above PLUS:
+```
+════════════════════════════════════════
+📈 TRADE HISTORY (Last 7.5 Days)
+
+BTC (19 trades)
+• 2026-02-17 23:00 +07 - 0.00007112 BTC - Order ID: 699490ad63 - Price: ฿2,109,089.86 ($67,516.18) - Spent: ฿150.00 ($4.80)
+• 2026-02-17 13:15 +07 - 0.00002343 BTC - Order ID: 6994078ec5 - Price: ฿2,133,945.84 ($68,311.87) - Spent: ฿50.00 ($1.60)
+...
+
+LINK (10 trades)
+• 2026-02-17 23:45 +07 - 1.97330654 LINK - Order ID: 69949b388b - Price: ฿278.72 ($8.90) - Spent: ฿550.00 ($17.57)
+...
 ```
 
 ### Schedule
-- **Weekly**: Every Sunday at 12:00 noon Bangkok time
-- **On Push**: After every commit to main branch
-- **Manual**: Can be triggered via GitHub Actions UI
+- **Weekly (Full Report)**: Every Sunday at 12:00 noon Bangkok time - includes trade history
+- **On Push (Short Report)**: After every commit to main branch - balance only for quick checks
+- **Manual (Configurable)**: Can be triggered via GitHub Actions UI with optional `short_report` toggle (default: full report)
 
 ## Currency Conversion
 
