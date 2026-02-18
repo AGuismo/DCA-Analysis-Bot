@@ -548,7 +548,7 @@ def main():
                 usd_rate = order['rate_thb'] * historical_fx
                 
                 part2_lines.append(
-                    f"• {date_str} {tz_str} - {order['amount_crypto']:.8f} {coin} - Order ID: {order['order_id']} - Price: ฿{order['rate_thb']:,.2f} (${usd_rate:,.2f}) - Spent: ฿{order['amount_thb']:,.2f} (${usd_value:,.2f})"
+                    f"• {date_str} {tz_str} - {order['amount_crypto']:.8f} {coin} - Order ID: {order['order_id'][:10]} - Price: ฿{order['rate_thb']:,.2f} (${usd_rate:,.2f}) - Spent: ฿{order['amount_thb']:,.2f} (${usd_value:,.2f})"
                 )
     else:
         part2_lines.append("\n" + "═" * 40)
