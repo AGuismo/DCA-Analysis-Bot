@@ -220,7 +220,7 @@ def send_to_discord(report_content):
     for i, chunk in enumerate(chunks):
         payload = {
             "embeds": [{
-                "description": f"```\n{chunk}\n```",
+                "description": chunk,
                 "color": 3447003  # Blue color (same as portfolio balance)
             }]
         }
