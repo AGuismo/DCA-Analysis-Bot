@@ -111,6 +111,12 @@ def get_ticker():
         r.raise_for_status()
         data = r.json()
         print(f"✅ Fetched ticker data for {len(data)} pairs")
+        
+        # Debug: Print sample of ticker data structure
+        if data:
+            sample_key = list(data.keys())[0]
+            print(f"📊 Sample ticker format - {sample_key}: {data[sample_key]}")
+        
         return data
     except Exception as e:
         print(f"⚠️ Failed to fetch ticker: {e}")
@@ -200,11 +206,12 @@ def main():
             continue
         
         # Get current price
-        symbol = f"{coin}_THB"
+        symbol = f"THB_{coin}"  # Bitkub uses THB_BTC format, not BTC_THB
         price_thb = 0
         
         if symbol in ticker:
             price_data = ticker[symbol]
+            print(f"🔍 {symbol} ticker data: {price_data}")
             if isinstance(price_data, dict):
                 price_thb = float(price_data.get('last', 0))
             else:
@@ -223,8 +230,8 @@ def main():
         line = (
             f"**{coin}**\n"
             f"  Amount: `{balance:.8f}`\n"
-            f"  Price: {price_thb:,.2f} THB\n"
-            f"  Value: {value_thb:,.2f} THB (${value_usd:,.2f})\n"
+            f"  Price: ฿{price_thb:,.2f}\n"
+            f"  Value: ฿{value_thb:,.2f} (${value_usd:,.2f})\n"
         )
         report_lines.append(line)
     
@@ -239,8 +246,8 @@ def main():
     message += "\n" + "─" * 40 + "\n"
     message += (
         f"**💰 Total Portfolio Value**\n"
-        f"  THB: {total_value_thb:,.2f} ฿\n"
-        f"  USD: ${total_value_usd:,.2f}\n"
+        f"  ฿{total_value_thb:,.2f}\n"
+        f"  ${total_value_usd:,.2f}\n"
     )
     
     print("\n" + message)
