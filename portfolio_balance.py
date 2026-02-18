@@ -95,6 +95,21 @@ def get_thb_usd_rate():
     print("❌ ERROR: All FX rate sources failed. USD values will be unavailable.")
     return 0.0
 
+def get_historical_thb_usd_rate(date_str):
+    """Get historical THB to USD rate for a specific date (YYYY-MM-DD)."""
+    # Try Frankfurter for historical rates
+    try:
+        url = f"https://api.frankfurter.app/{date_str}?from=THB&to=USD"
+        r = requests.get(url, timeout=5)
+        data = r.json()
+        if 'rates' in data and 'USD' in data['rates']:
+            return float(data['rates']['USD'])
+    except Exception as e:
+        pass
+    
+    # Fallback to current rate if historical fails
+    return get_thb_usd_rate()
+
 def get_balances():
     """Fetch wallet balances from Bitkub."""
     result = bitkub_request('POST', '/api/v3/market/balances', {})
@@ -118,31 +133,45 @@ def get_order_history(symbol, limit=100):
     
     return result.get('result', [])
 
-def aggregate_buy_orders(coins):
-    """Fetch and aggregate all BUY orders for given coins."""
+def aggregate_buy_orders(coins, days=7.5):
+    """Fetch and aggregate all BUY orders for given coins from last N days."""
+    cutoff_time = int(time.time()) - int(days * 86400)
     all_orders = {}
     
     for coin in coins:
         symbol = f"THB_{coin.upper()}"
-        orders = get_order_history(symbol)
+        orders = get_order_history(symbol, limit=200)
         
         if not orders:
             continue
         
-        # Filter for filled buy orders only
+        # Filter for filled buy orders within date range
         buy_orders = []
         for order in orders:
-            if order.get('side') == 'buy' and order.get('filled', 0) > 0:
+            order_time = order.get('ts', 0)
+            if order.get('side') == 'buy' and order.get('filled', 0) > 0 and order_time >= cutoff_time:
+                rate = float(order.get('rate', 0))
+                filled_thb = float(order.get('filled', 0))
+                amount_crypto = filled_thb / rate if rate > 0 else 0
+                
+                # Get historical USD rate for this trade date
+                trade_date = datetime.fromtimestamp(order_time, tz=SELECTED_TZ).strftime('%Y-%m-%d')
+                historical_fx = get_historical_thb_usd_rate(trade_date)
+                
                 buy_orders.append({
-                    'amount_crypto': float(order.get('filled', 0)) / float(order.get('rate', 1)),
-                    'amount_thb': float(order.get('filled', 0)),
-                    'rate': float(order.get('rate', 0)),
-                    'timestamp': order.get('ts', 0)
+                    'order_id': order.get('id', 'N/A'),
+                    'amount_crypto': amount_crypto,
+                    'amount_thb': filled_thb,
+                    'rate_thb': rate,
+                    'timestamp': order_time,
+                    'fx_rate': historical_fx  # Store the historical FX rate
                 })
         
         if buy_orders:
+            # Sort by timestamp (newest first)
+            buy_orders.sort(key=lambda x: x['timestamp'], reverse=True)
             all_orders[coin.upper()] = buy_orders
-            print(f"✓ Found {len(buy_orders)} buy orders for {coin}")
+            print(f"✓ Found {len(buy_orders)} buy orders for {coin} (last {days} days)")
     
     return all_orders
 
@@ -252,8 +281,8 @@ def main():
     fx_rate = get_thb_usd_rate()
     
     # Fetch order history for all coins
-    print("\n📜 Fetching order history...")
-    order_history = aggregate_buy_orders(coins)
+    print("\n📜 Fetching order history (last 7.5 days)...")
+    order_history = aggregate_buy_orders(coins, days=7.5)
     
     # Build report
     report_lines = []
@@ -304,65 +333,53 @@ def main():
         send_discord_notification(msg)
         return
     
-    # Build order history section
-    order_lines = []
-    total_invested_thb = 0
-    total_invested_usd = 0
-    
-    if order_history:
-        order_lines.append("\n📊 **Purchase History**\n")
-        
-        for coin in sorted(order_history.keys()):
-            orders = order_history[coin]
-            
-            # Calculate totals for this coin
-            total_crypto = sum(o['amount_crypto'] for o in orders)
-            total_thb = sum(o['amount_thb'] for o in orders)
-            total_usd_for_coin = total_thb * fx_rate
-            
-            total_invested_thb += total_thb
-            total_invested_usd += total_usd_for_coin
-            
-            order_lines.append(
-                f"**{coin}** ({len(orders)} orders)\n"
-                f"  Total: `{total_crypto:.8f} {coin}`\n"
-                f"  Invested: ฿{total_thb:,.2f} (${total_usd_for_coin:,.2f})\n"
-            )
-        
-        order_lines.append("─" * 40)
-        order_lines.append(
-            f"\n**💸 Total Invested**\n"
-            f"  ฿{total_invested_thb:,.2f}\n"
-            f"  ${total_invested_usd:,.2f}\n"
-        )
-    
-    # Calculate profit/loss
-    profit_loss_thb = total_value_thb - total_invested_thb
-    profit_loss_usd = total_value_usd - total_invested_usd
-    profit_loss_pct = (profit_loss_thb / total_invested_thb * 100) if total_invested_thb > 0 else 0
-    
-    pl_emoji = "📈" if profit_loss_thb >= 0 else "📉"
-    pl_sign = "+" if profit_loss_thb >= 0 else ""
-    
-    # Build final message
-    message = "\n".join(report_lines)
-    message += "\n" + "─" * 40 + "\n"
-    message += (
-        f"**💰 Total Portfolio Value**\n"
+    # Build Part 1: Current Portfolio
+    part1_lines = ["**📊 PART 1: CURRENT HOLDINGS**\n"]
+    part1_lines.extend(report_lines)
+    part1_lines.append("\n" + "─" * 40)
+    part1_lines.append(
+        f"\n**💰 Total Portfolio Value**\n"
         f"  ฿{total_value_thb:,.2f}\n"
         f"  ${total_value_usd:,.2f}\n"
     )
     
-    # Add order history
-    if order_lines:
-        message += "\n" + "\n".join(order_lines)
+    # Build Part 2: Trade History (last 7 days)
+    part2_lines = []
+    
+    if order_history:
+        part2_lines.append("\n" + "═" * 40)
+        part2_lines.append("\n**📈 PART 2: TRADE HISTORY (Last 7.5 Days)**\n")
         
-        # Add P&L section
-        message += (
-            f"\n{pl_emoji} **Profit/Loss**\n"
-            f"  {pl_sign}฿{profit_loss_thb:,.2f} ({pl_sign}{profit_loss_pct:.2f}%)\n"
-            f"  {pl_sign}${profit_loss_usd:,.2f}\n"
-        )
+        for coin in sorted(order_history.keys()):
+            orders = order_history[coin]
+            
+            if not orders:
+                continue
+            
+            part2_lines.append(f"\n**{coin}** ({len(orders)} trade{'' if len(orders) == 1 else 's'})")
+            
+            for order in orders:
+                # Format date
+                order_dt = datetime.fromtimestamp(order['timestamp'], tz=SELECTED_TZ)
+                date_str = order_dt.strftime('%Y-%m-%d %H:%M')
+                
+                # Use historical USD rate from the day of trade
+                historical_fx = order['fx_rate']
+                usd_value = order['amount_thb'] * historical_fx
+                usd_rate = order['rate_thb'] * historical_fx
+                
+                part2_lines.append(
+                    f"  • `{date_str}` - `{order['amount_crypto']:.8f} {coin}` [ID: {order['order_id']}]\n"
+                    f"    Price: ฿{order['rate_thb']:,.2f} (${usd_rate:,.2f})\n"
+                    f"    Spent: ฿{order['amount_thb']:,.2f} (${usd_value:,.2f})"
+                )
+    else:
+        part2_lines.append("\n" + "═" * 40)
+        part2_lines.append("\n**📈 PART 2: TRADE HISTORY (Last 7.5 Days)**\n")
+        part2_lines.append("\n_No trades in the last 7.5 days_")
+    
+    # Combine both parts
+    message = "\n".join(part1_lines + part2_lines)
     
     print("\n" + message)
     send_discord_notification(message)
