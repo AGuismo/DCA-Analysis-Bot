@@ -11,6 +11,12 @@ on:
   
   # Allow manual trigger
   workflow_dispatch:
+    inputs:
+      short_report:
+        description: 'Short report (balance only, no trade history)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   check_balance:
@@ -42,5 +48,8 @@ jobs:
         # Configuration
         DCA_TARGET_MAP: ${{ vars.DCA_TARGET_MAP }}
         TIMEZONE: ${{ vars.TIMEZONE || 'Asia/Bangkok' }}
+        
+        # Report format: push=short (balance only), schedule/manual=full (with trade history)
+        SHORT_REPORT: ${{ github.event_name == 'push' && 'true' || (github.event_name == 'workflow_dispatch' && inputs.short_report == true && 'true' || 'false') }}
         
       run: python portfolio_balance.py

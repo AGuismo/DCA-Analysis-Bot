@@ -16,6 +16,7 @@ API_SECRET = os.environ.get("BITKUB_API_SECRET")
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 DCA_TARGET_MAP_JSON = os.environ.get("DCA_TARGET_MAP", "{}")
 BASE_URL = "https://api.bitkub.com"
+SHORT_REPORT = os.environ.get("SHORT_REPORT", "true").lower() == "true"
 
 # Timezone Configuration
 TIMEZONE_NAME = os.environ.get("TIMEZONE", "Asia/Bangkok")
@@ -452,9 +453,11 @@ def main():
     # Get FX rate
     fx_rate = get_thb_usd_rate()
     
-    # Fetch order history for all coins
-    print("\n📜 Fetching order history (last 7.5 days)...")
-    order_history = aggregate_buy_orders(coins, days=7.5)
+    # Fetch order history for all coins (only if full report)
+    order_history = {}
+    if not SHORT_REPORT:
+        print("\n📜 Fetching order history (last 7.5 days)...")
+        order_history = aggregate_buy_orders(coins, days=7.5)
     
     # Build report
     report_lines = []
@@ -510,14 +513,14 @@ def main():
     part1_lines.extend(report_lines)
     part1_lines.append(
         f"\n**💰 Total Portfolio Value**\n"
-        f"  ฿{total_value_thb:,.2f}\n"
-        f"  ${total_value_usd:,.2f}\n"
+        f"฿{total_value_thb:,.2f}\n"
+        f"${total_value_usd:,.2f}\n"
     )
     
-    # Build Part 2: Trade History (last 7.5 days)
+    # Build Part 2: Trade History (last 7.5 days) - only if full report
     part2_lines = []
     
-    if order_history:
+    if not SHORT_REPORT and order_history:
         part2_lines.append("\n" + "═" * 40)
         part2_lines.append("**📈 TRADE HISTORY (Last 7.5 Days)**\n")
         
@@ -550,7 +553,8 @@ def main():
                 part2_lines.append(
                     f"• {date_str} {tz_str} - {order['amount_crypto']:.8f} {coin} - Order ID: {order['order_id'][:10]} - Price: ฿{order['rate_thb']:,.2f} (${usd_rate:,.2f}) - Spent: ฿{order['amount_thb']:,.2f} (${usd_value:,.2f})"
                 )
-    else:
+    elif not SHORT_REPORT:
+        # No trades but full report requested
         part2_lines.append("\n" + "═" * 40)
         part2_lines.append("\n**📈 TRADE HISTORY (Last 7.5 Days)**\n")
         part2_lines.append("\n_No trades in the last 7.5 days_")
