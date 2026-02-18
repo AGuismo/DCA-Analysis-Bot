@@ -131,30 +131,43 @@ def get_ai_summary(full_report, current_symbol):
         genai.configure(api_key=GEMINI_API_KEY)
 
         prompt = f"""
-        You are a crypto trading analyst. Analyze the following DCA report for {current_symbol}.
-        
-        KEY METRIC EXPLANATION:
-        - "median_miss": The median percentage difference between the close price at that time and the absolute lowest price of that same day. 
-          Example: 0.150000 means "Buying at this time is typically only 0.15% away from the perfect daily bottom."
-        - "win_rate": The percentage of days where a buy at this time was within 0.5% (a "snipe") of the absolute daily bottom.
-          High win_rate = High consistency.
-        
-        TASK:
-        1. Identify the single best time to buy.
-        2. APPLY THIS DECISION LOGIC:
-           - RECENCY BIAS: If a time slot has a significantly better 'win_rate' (>10% higher) in the 14-day data compared to the 30/60-day data, FAVOR the 14-day time (Market is shifting).
-           - STABILITY: If the 14-day data is noisy (low win rates across the board), sticking to the 30-day or 60-day winner is safer.
-           - CONSISTENCY: A time that appears in the top 5 across MULTIPLE timeframes is a strong candidate.
-        3. OUTPUT A RECOMMENDED TIME.
-        
-        FORMAT YOUR RESPONSE EXACTLY LIKE THIS (Do not include any other text before or after):
-        RECOMMENDED_TIME: HH:MM
-        REASON: [Short explanation suitable for Discord notification, max 3 sentences. Mention which timeframe influenced the decision.]
+        You are a crypto DCA timing analyst. Your job is to choose ONE daily buy time (HH:MM) for {current_symbol} from the report below.
 
-        EXAMPLE RESPONSE:
-        RECOMMENDED_TIME: 14:30
-        REASON: This time consistently catches the daily low with a 70% win rate and minimal median miss across both 14 and 30 day periods.
-        
+        METRICS (from the report):
+        - median_miss: Median % overpayment vs the day’s absolute low. LOWER is better. This is the PRIMARY objective.
+        - win_rate: % of days where buying at that time was within 0.5% of the absolute low. HIGHER is better. This is SECONDARY (stability).
+
+        IMPORTANT:
+        - median_miss is robust; win_rate depends on the 0.5% threshold and can be noisy.
+        - Do NOT invent numbers. Only use values in the report.
+        - Only choose times that appear in the report’s “Best DCA Time” tables.
+
+        TASK:
+        1) Pick ONE RECOMMENDED_TIME using the decision rules below.
+        2) Give a short reason (max 3 sentences) mentioning which timeframe(s) drove the decision.
+
+        DECISION RULES (follow in order):
+        A) Recency Shift Check (14-day override)
+        - Identify the best 14-day candidate by PRIMARY objective (lowest median_miss).
+        - Only override longer timeframes with the 14-day candidate if BOTH are true:
+        1) The 14-day candidate win_rate is >= 10 percentage points higher than the best 30-day candidate win_rate, AND
+        2) The 14-day candidate median_miss is not worse than the best 30-day candidate by more than 0.20 percentage points.
+        - If these conditions are NOT met, ignore the 14-day winner (treat as noise).
+
+        B) Base Selection (30/60-day weighted, median_miss-first)
+        - Compute the base choice by comparing the 30-day and 60-day best candidates (lowest median_miss in each timeframe).
+        - Prefer the 60-day best candidate unless the 30-day best median_miss is better by >= 0.15 percentage points (recent improvement).
+
+        C) Consistency Bonus (only as tie-break)
+        - If multiple candidates are within 0.10 percentage points median_miss of the current choice in the chosen base timeframe:
+        - Pick the one that appears in the Top 5 across the most timeframes (30/45/60).
+        - If still tied, pick the higher win_rate in the 60-day table.
+        - If still tied, pick the earlier time (HH:MM).
+
+        OUTPUT FORMAT (exactly, no extra text):
+        RECOMMENDED_TIME: HH:MM
+        REASON: <max 5 sentences, cite which rules/timeframes caused the decision>
+
         Report:
         {full_report}
         """
