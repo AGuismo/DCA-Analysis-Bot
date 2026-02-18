@@ -75,12 +75,13 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository vari
 - **Rationale**: Manual dispatch gives you full control over when trades execute. Analysis updates DCA_TARGET_MAP daily, but you decide when to run the trader
 
 **Portfolio Balance Workflow (`portfolio_check.yml`)**:
-- **Schedule**: Weekly on Sundays at 12:00 noon Bangkok (05:00 UTC)
+- **Schedule**: Weekly on Sundays + monthly on the 1st, both at 12:00 noon Bangkok (05:00 UTC)
 - **Trigger**: Also runs on every push to main + manual dispatch available
 - **Optimized**: Only installs minimal dependencies (requests library), uses pip caching for speed
 - **Report Mode**: Adaptive based on trigger
   - **Short Report (push)**: Current holdings and total value only - fast status check
-  - **Full Report (schedule/manual)**: Includes 7.5 days trade history + order details
+  - **Weekly Full Report (Sundays)**: Includes 7.5 days trade history + order details
+  - **Monthly Full Report (1st)**: Includes the entire previous month's trade history
 - **Report**: Fetches balances for all coins in DCA_TARGET_MAP, calculates portfolio value, sends Discord notification
 
 ## How It Works
@@ -162,9 +163,10 @@ LINK (10 trades)
 ```
 
 ### Schedule
-- **Weekly (Full Report)**: Every Sunday at 12:00 noon Bangkok time - includes trade history
+- **Weekly (Full Report)**: Every Sunday at 12:00 noon Bangkok time - includes 7.5 days trade history
+- **Monthly (Full Report)**: Every 1st of the month at 12:00 noon Bangkok time - includes entire previous month's trade history
 - **On Push (Short Report)**: After every commit to main branch - balance only for quick checks
-- **Manual (Configurable)**: Can be triggered via GitHub Actions UI with optional `short_report` toggle (default: full report)
+- **Manual (Configurable)**: Can be triggered via GitHub Actions UI with optional `short_report` toggle (default: full report with 7.5 days history)
 
 ## Currency Conversion
 

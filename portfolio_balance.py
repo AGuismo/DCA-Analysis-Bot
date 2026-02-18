@@ -14,6 +14,7 @@ from bitkub_client import bitkub_request, get_thb_usd_rate, get_historical_thb_u
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 DCA_TARGET_MAP_JSON = os.environ.get("DCA_TARGET_MAP", "{}")
 SHORT_REPORT = os.environ.get("SHORT_REPORT", "true").lower() == "true"
+REPORT_DAYS_RAW = os.environ.get("REPORT_DAYS", "7.5")
 
 # Timezone Configuration
 TIMEZONE_NAME = os.environ.get("TIMEZONE", "Asia/Bangkok")
@@ -355,8 +356,20 @@ def main():
     # Fetch order history for all coins (only if full report)
     order_history = {}
     if not SHORT_REPORT:
-        print("\n📜 Fetching order history (last 7.5 days)...")
-        order_history = aggregate_buy_orders(coins, days=7.5)
+        # Calculate report window
+        if REPORT_DAYS_RAW == 'previous_month':
+            # Calculate days in the previous month
+            now = datetime.now(SELECTED_TZ)
+            first_of_this_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            last_of_prev_month = first_of_this_month - timedelta(days=1)
+            report_days = float(last_of_prev_month.day)  # 28, 29, 30, or 31
+            report_label = last_of_prev_month.strftime('%B %Y')  # e.g., "January 2026"
+            print(f"\n📜 Fetching order history for {report_label} ({int(report_days)} days)...")
+        else:
+            report_days = float(REPORT_DAYS_RAW)
+            report_label = f"Last {report_days} Days"
+            print(f"\n📜 Fetching order history (last {report_days} days)...")
+        order_history = aggregate_buy_orders(coins, days=report_days)
     
     # Build report
     report_lines = []
@@ -421,7 +434,7 @@ def main():
     
     if not SHORT_REPORT and order_history:
         part2_lines.append("\n" + "═" * 40)
-        part2_lines.append("**📈 TRADE HISTORY (Last 7.5 Days)**\n")
+        part2_lines.append(f"**📈 TRADE HISTORY ({report_label})**\n")
         
         for coin in sorted(order_history.keys()):
             orders = order_history[coin]
@@ -455,8 +468,8 @@ def main():
     elif not SHORT_REPORT:
         # No trades but full report requested
         part2_lines.append("\n" + "═" * 40)
-        part2_lines.append("\n**📈 TRADE HISTORY (Last 7.5 Days)**\n")
-        part2_lines.append("\n_No trades in the last 7.5 days_")
+        part2_lines.append(f"\n**📈 TRADE HISTORY ({report_label})**\n")
+        part2_lines.append(f"\n_No trades in this period_")
     
     # Combine both parts
     message = "\n".join(part1_lines + part2_lines)
