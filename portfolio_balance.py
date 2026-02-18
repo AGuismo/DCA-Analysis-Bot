@@ -154,7 +154,8 @@ def aggregate_buy_orders(coins, days=7.5):
     all_orders = {}
     
     for coin in coins:
-        symbol = f"THB_{coin.upper()}"
+        # Order history uses coin_THB format (different from ticker API)
+        symbol = f"{coin.upper()}_THB"
         orders = get_order_history(symbol, limit=200)
         
         if not orders:
