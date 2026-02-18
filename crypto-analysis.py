@@ -199,15 +199,16 @@ def send_to_discord(report_content):
         print("No DISCORD_WEBHOOK_URL found. Skipping Discord notification.")
         return
 
-    # Discord has a 2000 char limit. Simple truncation strategy or splitting.
-    # For this report, we'll try to keep it concise, or send chunks.
-    # A simple approach: Send chunks of 1900 chars
-    
-    chunks = [report_content[i:i+1900] for i in range(0, len(report_content), 1900)]
+    # Discord embeds have a 4096 char limit for description
+    # Split into chunks of ~3900 chars to stay safe
+    chunks = [report_content[i:i+3900] for i in range(0, len(report_content), 3900)]
     
     for i, chunk in enumerate(chunks):
         payload = {
-            "content": f"```\n{chunk}\n```" if i == 0 else f"```\n{chunk}\n```"
+            "embeds": [{
+                "description": f"```\n{chunk}\n```",
+                "color": 3447003  # Blue color (same as portfolio balance)
+            }]
         }
         try:
             r = requests.post(DISCORD_WEBHOOK_URL, json=payload)

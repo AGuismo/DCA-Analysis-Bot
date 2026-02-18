@@ -497,7 +497,7 @@ def main():
         return
     
     # Build Part 1: Current Portfolio
-    part1_lines = ["**📊 PART 1: CURRENT HOLDINGS**\n"]
+    part1_lines = ["**📊 CURRENT HOLDINGS**\n"]
     part1_lines.extend(report_lines)
     part1_lines.append("\n" + "─" * 40)
     part1_lines.append(
@@ -511,7 +511,7 @@ def main():
     
     if order_history:
         part2_lines.append("\n" + "═" * 40)
-        part2_lines.append("\n**📈 PART 2: TRADE HISTORY (Last 7.5 Days)**\n")
+        part2_lines.append("\n**📈 TRADE HISTORY (Last 7.5 Days)**\n")
         
         for coin in sorted(order_history.keys()):
             orders = order_history[coin]
@@ -544,7 +544,7 @@ def main():
                 )
     else:
         part2_lines.append("\n" + "═" * 40)
-        part2_lines.append("\n**📈 PART 2: TRADE HISTORY (Last 7.5 Days)**\n")
+        part2_lines.append("\n**📈 TRADE HISTORY (Last 7.5 Days)**\n")
         part2_lines.append("\n_No trades in the last 7.5 days_")
     
     # Combine both parts
