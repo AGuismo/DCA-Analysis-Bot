@@ -104,72 +104,33 @@ def get_balances():
     
     return result.get('result', {})
 
-def get_global_prices(coin_list):
-    """Fetch global market prices from CoinGecko API."""
-    # Map common symbols to CoinGecko IDs
-    symbol_to_id = {
-        'BTC': 'bitcoin',
-        'ETH': 'ethereum',
-        'LINK': 'chainlink',
-        'ADA': 'cardano',
-        'DOT': 'polkadot',
-        'MATIC': 'matic-network',
-        'SOL': 'solana',
-        'AVAX': 'avalanche-2',
-        'UNI': 'uniswap',
-        'AAVE': 'aave',
-        'ATOM': 'cosmos',
-        'XRP': 'ripple',
-        'DOGE': 'dogecoin',
-        'LTC': 'litecoin',
-        'BCH': 'bitcoin-cash',
-        'XLM': 'stellar',
-        'ALGO': 'algorand',
-        'VET': 'vechain',
-        'FIL': 'filecoin',
-        'SAND': 'the-sandbox',
-        'MANA': 'decentraland',
-        'AXS': 'axie-infinity',
-        'SHIB': 'shiba-inu',
-        'CRO': 'crypto-com-chain',
-        'NEAR': 'near',
-        'APE': 'apecoin',
-        'LDO': 'lido-dao',
-        'ARB': 'arbitrum',
-        'OP': 'optimism',
-    }
+def get_bitkub_prices(coin_list):
+    """Fetch current prices from Bitkub TradingView API (same as app uses)."""
+    prices = {}
     
-    # Convert symbols to CoinGecko IDs
-    coin_ids = []
     for coin in coin_list:
-        if coin.upper() in symbol_to_id:
-            coin_ids.append(symbol_to_id[coin.upper()])
-        else:
-            # Try lowercase as fallback
-            coin_ids.append(coin.lower())
+        try:
+            symbol = f"{coin.upper()}_THB"
+            # Get current day's data
+            to_ts = int(time.time())
+            from_ts = to_ts - 86400  # 24 hours ago
+            
+            url = f"https://api.bitkub.com/tradingview/history?symbol={symbol}&resolution=1&from={from_ts}&to={to_ts}"
+            r = requests.get(url, timeout=5)
+            
+            if r.status_code == 200:
+                data = r.json()
+                
+                # Get most recent close price
+                if data.get('s') == 'ok' and 'c' in data and data['c']:
+                    latest_price = data['c'][-1]  # Last close price
+                    prices[coin.upper()] = float(latest_price)
+        except Exception as e:
+            print(f"⚠️ Failed to fetch {coin} price: {e}")
+            continue
     
-    if not coin_ids:
-        return {}
-    
-    try:
-        ids_param = ','.join(coin_ids)
-        url = f"https://api.coingecko.com/api/v3/simple/price?ids={ids_param}&vs_currencies=thb"
-        r = requests.get(url, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        
-        # Convert back to symbol-based dict
-        prices = {}
-        for coin in coin_list:
-            coin_id = symbol_to_id.get(coin.upper(), coin.lower())
-            if coin_id in data and 'thb' in data[coin_id]:
-                prices[coin.upper()] = data[coin_id]['thb']
-        
-        print(f"✅ Fetched global prices for {len(prices)} coins from CoinGecko")
-        return prices
-    except Exception as e:
-        print(f"⚠️ Failed to fetch global prices: {e}")
-        return {}
+    print(f"✅ Fetched Bitkub prices for {len(prices)} coins")
+    return prices
 
 def send_discord_notification(message):
     """Send Discord webhook notification."""
@@ -242,8 +203,8 @@ def main():
         send_discord_notification(error_msg)
         return
     
-    # Fetch current prices from global market
-    global_prices = get_global_prices(coins)
+    # Fetch current prices from Bitkub (same API the app uses)
+    bitkub_prices = get_bitkub_prices(coins)
     
     # Get FX rate
     fx_rate = get_thb_usd_rate()
@@ -267,11 +228,11 @@ def main():
             # Skip coins with zero balance
             continue
         
-        # Get current price from global market
-        price_thb = global_prices.get(coin.upper(), 0)
+        # Get current price from Bitkub
+        price_thb = bitkub_prices.get(coin.upper(), 0)
         
         if price_thb > 0:
-            print(f"✓ {coin}: ฿{price_thb:,.2f} (global market)")
+            print(f"✓ {coin}: ฿{price_thb:,.2f}")
         else:
             print(f"⚠️ No price data for {coin}")
         
