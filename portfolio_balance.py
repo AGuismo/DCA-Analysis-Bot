@@ -274,7 +274,7 @@ def send_discord_notification(message):
     # Split at separator
     parts = message.split(separator, 1)
     part1 = parts[0].strip()
-    part2_full = (separator + parts[1]).strip() if len(parts) > 1 else ""
+    part2_full = parts[1].strip() if len(parts) > 1 else ""
     
     # Send Part 1
     payload1 = {
