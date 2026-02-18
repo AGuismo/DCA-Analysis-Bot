@@ -10,6 +10,11 @@ on:
         description: 'Trading Pair (e.g., BTC/USDT, ETH/USDT)'
         required: true
         default: 'BTC/USDT, LINK/USDT'
+      short_report:
+        description: 'Send short report (AI summary only)'
+        required: false
+        type: boolean
+        default: true
   push:
     branches: [ "main" ]
 
@@ -45,6 +50,8 @@ jobs:
         EXCHANGE_ID: "binanceus"
         # Combine inputs with a default list for scheduled runs
         SYMBOL: ${{ inputs.symbol || 'BTC/USDT, LINK/USDT' }}
+        # Report format: true = AI summary only, false = full detailed analysis (default: true)
+        SHORT_REPORT: ${{ inputs.short_report == 'false' && 'false' || 'true' }}
       run: python crypto_analysis.py
 
     - name: Update Repository Variable

@@ -29,6 +29,7 @@ PERIODS = [14, 30, 45, 60]  # Focused on short-term market evolution
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 DCA_TARGET_MAP_ENV = os.environ.get("DCA_TARGET_MAP", "{}")
+SHORT_REPORT = os.environ.get("SHORT_REPORT", "true").lower() == "true"
 try:
     EXISTING_MAP = json.loads(DCA_TARGET_MAP_ENV)
 except:
@@ -237,12 +238,25 @@ def main():
     for symbol in SYMBOLS:
         print(f"\nExample: PROCESSING {symbol}...")
         report_lines = []
+        summary_lines = []  # For short report
         
-        def log(s):
-            print(s)
-            report_lines.append(s)
+        def log(s, summary_only=False):
+            """Log to console and report. If summary_only=True, only add to summary."""
+            if summary_only:
+                # Summary content - always printed, added to summary lines
+                print(s)
+                summary_lines.append(s)
+                if not SHORT_REPORT:
+                    report_lines.append(s)  # In full mode, summary is part of report
+            else:
+                # Detailed content - always added to report (for AI), conditionally printed
+                if not SHORT_REPORT:
+                    print(s)
+                report_lines.append(s)  # Always build full report for AI analysis
 
-        log(f"Fetching max required data ({max(PERIODS)} days) for {symbol}...")
+        print(f"Fetching max required data ({max(PERIODS)} days) for {symbol}...")
+        if not SHORT_REPORT:
+            log(f"Fetching max required data ({max(PERIODS)} days) for {symbol}...")
         
         try:
             # Fetch enough data for the largest period
@@ -258,7 +272,8 @@ def main():
             df["local_date"] = df["local_ts"].dt.date
             df["local_time"] = df["local_ts"].dt.strftime("%H:%M")
 
-            log(f"Timezone: {LOCAL_TZ}")
+            if not SHORT_REPORT:
+                log(f"Timezone: {LOCAL_TZ}")
 
             best_overall_time = None
             
@@ -289,39 +304,45 @@ def main():
                 except Exception as e:
                     log(f"Could not analyze {days} days: {e}")
 
-            # After loop, send to discord
-            full_report = "\n".join(report_lines)
-            
+            # After loop, prepare for AI analysis (always use full detailed report)
             final_time = best_overall_time
             source_method = "Quantitative (30d Median Miss)"
 
             if GEMINI_API_KEY:
-                log("\n" + "="*40)
-                log("🤖 AI ANALYSIS & RECOMMENDATION")
-                log("="*40)
-                ai_summary, ai_time, used_model = get_ai_summary(full_report, symbol)
+                log("\n" + "="*40, summary_only=True)
+                log("🤖 AI ANALYSIS & RECOMMENDATION", summary_only=True)
+                log("="*40, summary_only=True)
+                
+                # For AI, we need the full detailed report
+                detailed_report = "\n".join(report_lines)
+                ai_summary, ai_time, used_model = get_ai_summary(detailed_report, symbol)
                 
                 if used_model:
-                    log(f"🧠 Model Used: {used_model}")
+                    log(f"🧠 Model Used: {used_model}", summary_only=True)
                     
-                log(ai_summary)
+                log(ai_summary, summary_only=True)
                 
                 if ai_time:
-                    log(f"\n✨ AI Recommendation Identified: {ai_time}")
+                    log(f"\n✨ AI Recommendation Identified: {ai_time}", summary_only=True)
                     if ai_time != final_time:
-                        log(f"🔄 Switching target from {final_time} (Math) to {ai_time} (AI)")
+                        log(f"🔄 Switching target from {final_time} (Math) to {ai_time} (AI)", summary_only=True)
                         final_time = ai_time
                         source_method = f"🤖 AI Recommendation"
                     else:
-                        log("✅ AI agrees with Quantitative Analysis.")
+                        log("✅ AI agrees with Quantitative Analysis.", summary_only=True)
                         source_method = f"🤝 Consensus (AI + Math)"
                 else:
-                    log("⚠️ Could not extract valid time from AI. Sticking to math-based time.")
+                    log("⚠️ Could not extract valid time from AI. Sticking to math-based time.", summary_only=True)
 
-            # Update full_report with new logs
-            log(f"\n🎯 FINAL DECISION for {symbol}: {final_time}")
-            log(f"ℹ️ SOURCE: {source_method}")
-            full_report = "\n".join(report_lines)
+            # Build final report for Discord
+            log(f"\n🎯 FINAL DECISION for {symbol}: {final_time}", summary_only=True)
+            log(f"ℹ️ SOURCE: {source_method}", summary_only=True)
+            
+            # Determine what to send to Discord
+            if SHORT_REPORT:
+                full_report = "\n".join(summary_lines)
+            else:
+                full_report = "\n".join(report_lines)
 
             # Send individual report per symbol
             send_to_discord(full_report)
@@ -375,7 +396,8 @@ def main():
 
 
         except Exception as e:
-             log(f"CRITICAL FAILURE processing {symbol}: {e}")
+             error_msg = f"CRITICAL FAILURE processing {symbol}: {e}"
+             print(error_msg)
              send_to_discord(f"❌ Analysis Failed for {symbol}: {e}")
 
     # Export the merged map for GitHub Actions
