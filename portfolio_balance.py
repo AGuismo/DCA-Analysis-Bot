@@ -321,8 +321,10 @@ def send_discord_notification(message):
     current_coin_lines = []
     
     for line in lines:
-        # Check if this is a coin header
-        if line.strip().startswith('**') and '(' in line and 'trade' in line.lower():
+        # Check if this is a coin header (e.g., "**BTC** (19 trades)")
+        # Exclude the main TRADE HISTORY header
+        if (line.strip().startswith('**') and '(' in line and 'trade' in line.lower() 
+            and 'HISTORY' not in line and 'Last' not in line):
             # Save previous section
             if current_coin_lines:
                 coin_sections.append('\n'.join(current_coin_lines))
