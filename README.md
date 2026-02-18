@@ -46,7 +46,7 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository vari
 
 ### 3. Workflow Configuration
 
-**Analysis Workflow (`crypto-analysis.yml`)**:
+**Analysis Workflow (`crypto_analysis.yml`)**:
 - **Schedule**: Daily at 23:00 UTC (06:00 Bangkok)
 - **Trigger**: Manual dispatch or push to main
 - **Concurrency**: Only one analysis runs at a time (cancel-in-progress)
@@ -74,7 +74,7 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository vari
 ## How It Works
 
 ### Daily Analysis Cycle
-1. At 06:00 Bangkok time, `crypto-analysis.yml` triggers
+1. At 06:00 Bangkok time, `crypto_analysis.yml` triggers
 2. Fetches 60 days of 15-minute OHLCV data from Binance
 3. Calculates metrics: `median_miss`, `win_rate`, `dca_price` for each 15-min slot
 4. Gemini AI synthesizes recommendation across 14/30/45/60-day periods
