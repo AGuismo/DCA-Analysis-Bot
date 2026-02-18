@@ -227,25 +227,22 @@ def get_bitkub_prices(coin_list):
     return prices
 
 def send_discord_notification(message):
-    """Send Discord webhook notification, splitting if needed."""
+    """Send Discord webhook notification, splitting intelligently if needed."""
     if not DISCORD_WEBHOOK_URL:
         print("⚠️ No Discord webhook URL configured")
         return
     
-    # Discord embed description limit is 4096 chars
-    # If message is too long, split into multiple embeds or use content field
+    MAX_LENGTH = 4000  # Safe limit for Discord embeds
     
-    if len(message) <= 4000:
-        # Single embed
+    # Check if message fits in one embed
+    if len(message) <= MAX_LENGTH:
         payload = {
             "embeds": [{
                 "title": "💼 Portfolio Balance Report",
                 "description": message,
-                "color": 3447003,  # Blue
+                "color": 3447003,
                 "timestamp": datetime.now(SELECTED_TZ).isoformat(),
-                "footer": {
-                    "text": "DCA Portfolio Tracker"
-                }
+                "footer": {"text": "DCA Portfolio Tracker"}
             }]
         }
         
@@ -255,48 +252,144 @@ def send_discord_notification(message):
             print("✅ Discord notification sent")
         except Exception as e:
             print(f"❌ Failed to send Discord notification: {e}")
-    else:
-        # Split into multiple messages
-        # Find the separator between Part 1 and Part 2
-        separator = "════════════════════════════════════════"
-        
-        if separator in message:
-            parts = message.split(separator, 1)
-            part1 = parts[0].strip()
-            part2 = (separator + parts[1]).strip() if len(parts) > 1 else ""
-            
-            # Send Part 1
-            payload1 = {
-                "embeds": [{
-                    "title": "💼 Portfolio Balance Report",
-                    "description": part1,
-                    "color": 3447003,
-                    "timestamp": datetime.now(SELECTED_TZ).isoformat()
-                }]
-            }
-            
+        return
+    
+    # Message is too long - split intelligently
+    separator = "════════════════════════════════════════"
+    
+    if separator not in message:
+        # Fallback: just chunk the message
+        chunks = [message[i:i+MAX_LENGTH] for i in range(0, len(message), MAX_LENGTH)]
+        for i, chunk in enumerate(chunks):
+            payload = {"embeds": [{"description": chunk, "color": 3447003}]}
             try:
-                r = requests.post(DISCORD_WEBHOOK_URL, json=payload1, timeout=10)
-                r.raise_for_status()
-                print("✅ Discord notification (Part 1) sent")
-                
-                # Send Part 2 if exists
-                if part2:
-                    time.sleep(0.5)  # Small delay between messages
-                    payload2 = {
-                        "embeds": [{
-                            "description": part2,
-                            "color": 3447003,
-                            "footer": {
-                                "text": "DCA Portfolio Tracker"
-                            }
-                        }]
-                    }
-                    r = requests.post(DISCORD_WEBHOOK_URL, json=payload2, timeout=10)
-                    r.raise_for_status()
-                    print("✅ Discord notification (Part 2) sent")
+                if i > 0:
+                    time.sleep(0.5)
+                requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10).raise_for_status()
+                print(f"✅ Discord chunk {i+1}/{len(chunks)} sent")
             except Exception as e:
-                print(f"❌ Failed to send Discord notification: {e}")
+                print(f"❌ Failed to send chunk {i+1}: {e}")
+        return
+    
+    # Split at separator
+    parts = message.split(separator, 1)
+    part1 = parts[0].strip()
+    part2_full = (separator + parts[1]).strip() if len(parts) > 1 else ""
+    
+    # Send Part 1
+    payload1 = {
+        "embeds": [{
+            "title": "💼 Portfolio Balance Report",
+            "description": part1,
+            "color": 3447003,
+            "timestamp": datetime.now(SELECTED_TZ).isoformat()
+        }]
+    }
+    
+    try:
+        requests.post(DISCORD_WEBHOOK_URL, json=payload1, timeout=10).raise_for_status()
+        print("✅ Discord notification (Part 1) sent")
+    except Exception as e:
+        print(f"❌ Failed to send Part 1: {e}")
+        return
+    
+    if not part2_full:
+        return
+    
+    # Handle Part 2
+    if len(part2_full) <= MAX_LENGTH:
+        # Part 2 fits in one message
+        time.sleep(0.5)
+        payload2 = {
+            "embeds": [{
+                "description": part2_full,
+                "color": 3447003,
+                "footer": {"text": "DCA Portfolio Tracker"}
+            }]
+        }
+        try:
+            requests.post(DISCORD_WEBHOOK_URL, json=payload2, timeout=10).raise_for_status()
+            print("✅ Discord notification (Part 2) sent")
+        except Exception as e:
+            print(f"❌ Failed to send Part 2: {e}")
+        return
+    
+    # Part 2 is too long - split by coin
+    lines = part2_full.split('\n')
+    header_lines = []
+    coin_sections = []
+    current_coin_lines = []
+    
+    for line in lines:
+        # Check if this is a coin header
+        if line.strip().startswith('**') and '(' in line and 'trade' in line.lower():
+            # Save previous section
+            if current_coin_lines:
+                coin_sections.append('\n'.join(current_coin_lines))
+            # Start new section
+            current_coin_lines = [line]
+        elif current_coin_lines:
+            current_coin_lines.append(line)
+        else:
+            header_lines.append(line)
+    
+    # Save last section
+    if current_coin_lines:
+        coin_sections.append('\n'.join(current_coin_lines))
+    
+    # Send header first
+    if header_lines:
+        time.sleep(0.5)
+        header_text = '\n'.join(header_lines)
+        payload = {"embeds": [{"description": header_text, "color": 3447003}]}
+        try:
+            requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10).raise_for_status()
+            print("✅ Discord notification (Part 2 header) sent")
+        except Exception as e:
+            print(f"❌ Failed to send Part 2 header: {e}")
+    
+    # Send each coin section
+    for i, section in enumerate(coin_sections):
+        time.sleep(0.5)
+        
+        # If single section is still too long, chunk it
+        if len(section) > MAX_LENGTH:
+            section_lines = section.split('\n')
+            chunks = []
+            current_chunk = []
+            current_length = 0
+            header_line = section_lines[0] if section_lines else ""
+            
+            for sline in section_lines:
+                line_length = len(sline) + 1
+                if current_length + line_length > MAX_LENGTH - 100 and current_chunk:
+                    chunks.append('\n'.join(current_chunk))
+                    current_chunk = [header_line + " (cont.)", sline]
+                    current_length = len(header_line) + line_length + 8
+                else:
+                    current_chunk.append(sline)
+                    current_length += line_length
+            
+            if current_chunk:
+                chunks.append('\n'.join(current_chunk))
+            
+            for j, chunk in enumerate(chunks):
+                if j > 0:
+                    time.sleep(0.5)
+                payload = {"embeds": [{"description": chunk, "color": 3447003}]}
+                try:
+                    requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10).raise_for_status()
+                    print(f"✅ Discord notification (Coin {i+1} part {j+1}/{len(chunks)}) sent")
+                except Exception as e:
+                    print(f"❌ Failed to send coin {i+1} part {j+1}: {e}")
+        else:
+            # Section fits in one message
+            payload = {"embeds": [{"description": section, "color": 3447003}]}
+            try:
+                requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10).raise_for_status()
+                print(f"✅ Discord notification (Coin {i+1}) sent")
+            except Exception as e:
+                print(f"❌ Failed to send coin {i+1}: {e}")
 
 def main():
     print("--- Portfolio Balance Check ---")
@@ -413,7 +506,7 @@ def main():
         f"  ${total_value_usd:,.2f}\n"
     )
     
-    # Build Part 2: Trade History (last 7 days)
+    # Build Part 2: Trade History (last 7.5 days)
     part2_lines = []
     
     if order_history:
