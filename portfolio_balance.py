@@ -522,9 +522,17 @@ def main():
             part2_lines.append(f"\n**{coin}** ({len(orders)} trade{'' if len(orders) == 1 else 's'})")
             
             for order in orders:
-                # Format date
+                # Format date with timezone
                 order_dt = datetime.fromtimestamp(order['timestamp'], tz=SELECTED_TZ)
                 date_str = order_dt.strftime('%Y-%m-%d %H:%M')
+                # Get timezone abbreviation (e.g., ICT) or offset (e.g., +07:00)
+                tz_abbr = order_dt.strftime('%Z')  # e.g., ICT
+                if not tz_abbr or tz_abbr.startswith('UTC'):
+                    # Fallback to offset if no abbreviation
+                    tz_offset = order_dt.strftime('%z')  # e.g., +0700
+                    tz_str = f"{tz_offset[0]}{int(tz_offset[1:3])}"  # e.g., +7
+                else:
+                    tz_str = tz_abbr
                 
                 # Use historical USD rate from the day of trade
                 historical_fx = order['fx_rate']
@@ -532,9 +540,7 @@ def main():
                 usd_rate = order['rate_thb'] * historical_fx
                 
                 part2_lines.append(
-                    f"  • `{date_str}` - `{order['amount_crypto']:.8f} {coin}` [ID: {order['order_id']}]\n"
-                    f"    Price: ฿{order['rate_thb']:,.2f} (${usd_rate:,.2f})\n"
-                    f"    Spent: ฿{order['amount_thb']:,.2f} (${usd_value:,.2f})"
+                    f"  • {date_str} {tz_str} - {order['amount_crypto']:.8f} {coin} - Order ID: {order['order_id']} - Price: ฿{order['rate_thb']:,.2f} (${usd_rate:,.2f}) - Spent: ฿{order['amount_thb']:,.2f} (${usd_value:,.2f})"
                 )
     else:
         part2_lines.append("\n" + "═" * 40)
