@@ -108,6 +108,10 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository vari
 
 **Why Manual Dispatch?**: The system intentionally has NO automatic cron schedule on the trader workflow. This gives you complete control over trade execution timing. While analysis runs daily to update optimal buy times, you decide when to actually execute trades.
 
+**Automating the trigger (optional)**: To run the trader automatically every 15 minutes without adding a cron schedule to the workflow itself, you can call the `workflow_dispatch` API externally:
+- **Local cron job**: Add a crontab entry on any always-on machine: `*/15 * * * * curl -s -X POST -H "Authorization: token YOUR_PAT" -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/YOUR_USER/YOUR_REPO/actions/workflows/daily_dca.yml/dispatches -d '{"ref":"main"}'`
+- **Online cron service**: Use [cron-job.org](https://cron-job.org/en/) (free) — point it at the same GitHub API URL above with your PAT in the `Authorization` header, scheduled every 15 minutes. The workflow's Bash Quick Check will exit immediately if no trade is due, so unnecessary triggers are near-free.
+
 ## Portfolio Balance Reporting
 
 The balance checker provides automated portfolio tracking and valuation:
