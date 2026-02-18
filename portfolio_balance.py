@@ -177,8 +177,13 @@ def main():
     
     for coin in sorted(coins):
         # Get balance (available balance, not including locked)
-        balance_key = coin
-        balance = float(balances.get(balance_key, 0))
+        balance_data = balances.get(coin, {})
+        
+        # Handle both formats: {"BTC": 0.123} or {"BTC": {"available": 0.123, "reserved": 0.001}}
+        if isinstance(balance_data, dict):
+            balance = float(balance_data.get('available', 0))
+        else:
+            balance = float(balance_data)
         
         if balance == 0:
             # Skip coins with zero balance
