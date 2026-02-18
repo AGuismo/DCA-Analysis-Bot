@@ -337,8 +337,14 @@ def send_discord_notification(message):
     if current_coin_lines:
         coin_sections.append('\n'.join(current_coin_lines))
     
-    # Send header first
-    if header_lines:
+    # Combine header with first coin section
+    if coin_sections:
+        # Add header to first coin section
+        if header_lines:
+            header_text = '\n'.join(header_lines)
+            coin_sections[0] = header_text + '\n' + coin_sections[0]
+    elif header_lines:
+        # No coin sections but we have a header - send it alone
         time.sleep(0.5)
         header_text = '\n'.join(header_lines)
         payload = {"embeds": [{"description": header_text, "color": 3447003}]}
@@ -347,6 +353,7 @@ def send_discord_notification(message):
             print("✅ Discord notification (Part 2 header) sent")
         except Exception as e:
             print(f"❌ Failed to send Part 2 header: {e}")
+        return
     
     # Send each coin section
     for i, section in enumerate(coin_sections):
@@ -499,7 +506,6 @@ def main():
     # Build Part 1: Current Portfolio
     part1_lines = ["**📊 CURRENT HOLDINGS**\n"]
     part1_lines.extend(report_lines)
-    part1_lines.append("\n" + "─" * 40)
     part1_lines.append(
         f"\n**💰 Total Portfolio Value**\n"
         f"  ฿{total_value_thb:,.2f}\n"
@@ -511,7 +517,7 @@ def main():
     
     if order_history:
         part2_lines.append("\n" + "═" * 40)
-        part2_lines.append("\n**📈 TRADE HISTORY (Last 7.5 Days)**\n")
+        part2_lines.append("**📈 TRADE HISTORY (Last 7.5 Days)**\n")
         
         for coin in sorted(order_history.keys()):
             orders = order_history[coin]
