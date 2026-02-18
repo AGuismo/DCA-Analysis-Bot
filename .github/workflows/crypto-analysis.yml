@@ -51,7 +51,7 @@ jobs:
         # Combine inputs with a default list for scheduled runs
         SYMBOL: ${{ inputs.symbol || 'BTC/USDT, LINK/USDT' }}
         # Report format: true = AI summary only, false = full detailed analysis (default: true)
-        SHORT_REPORT: ${{ inputs.short_report == 'false' && 'false' || 'true' }}
+        SHORT_REPORT: ${{ inputs.short_report == false && 'false' || 'true' }}
       run: python crypto_analysis.py
 
     - name: Update Repository Variable
