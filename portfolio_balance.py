@@ -110,13 +110,7 @@ def get_ticker():
         r = requests.get(f"{BASE_URL}/api/market/ticker", timeout=10)
         r.raise_for_status()
         data = r.json()
-        print(f"✅ Fetched ticker data for {len(data)} pairs")
-        
-        # Debug: Print sample of ticker data structure
-        if data:
-            sample_key = list(data.keys())[0]
-            print(f"📊 Sample ticker format - {sample_key}: {data[sample_key]}")
-        
+        print(f"✅ Fetched ticker data for {len(data)} trading pairs")
         return data
     except Exception as e:
         print(f"⚠️ Failed to fetch ticker: {e}")
@@ -161,15 +155,28 @@ def main():
         print("❌ No coins configured in DCA_TARGET_MAP")
         return
     
-    # Extract base symbols from map keys (e.g., "BTC_THB" -> "BTC")
+    # Extract base symbols from map keys
+    # Handle formats: "THB_BTC" (Bitkub native), "BTC_THB", "BTC/USDT"
     coins = []
     for key in target_map.keys():
-        # Handle both "BTC_THB" and "BTC/USDT" formats
-        base = key.split('_')[0].split('/')[0]
-        if base and base not in coins:
+        if '_' in key:
+            parts = key.split('_')
+            # If first part is THB, the coin is the second part (THB_BTC -> BTC)
+            # Otherwise, coin is the first part (BTC_THB -> BTC)
+            if parts[0] == 'THB' and len(parts) > 1:
+                base = parts[1]
+            else:
+                base = parts[0]
+        elif '/' in key:
+            base = key.split('/')[0]
+        else:
+            base = key
+        
+        if base and base not in coins and base != 'THB':
             coins.append(base)
     
-    print(f"Checking balances for: {coins}")
+    print(f"📋 DCA Target Map Keys: {list(target_map.keys())}")
+    print(f"🔍 Extracted coins to check: {coins}")
     
     # Fetch balances
     try:
@@ -206,16 +213,16 @@ def main():
             continue
         
         # Get current price
-        symbol = f"THB_{coin}"  # Bitkub uses THB_BTC format, not BTC_THB
+        symbol = f"THB_{coin}"  # Bitkub uses THB_BTC format
         price_thb = 0
         
         if symbol in ticker:
             price_data = ticker[symbol]
-            print(f"🔍 {symbol} ticker data: {price_data}")
             if isinstance(price_data, dict):
                 price_thb = float(price_data.get('last', 0))
             else:
                 price_thb = float(price_data)
+            print(f"✓ {symbol}: ฿{price_thb:,.2f}")
         else:
             print(f"⚠️ No ticker data for {symbol}")
         
