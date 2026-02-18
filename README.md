@@ -11,6 +11,7 @@ The system consists of three parts:
 
 - **Multi-Symbol Support**: Analyze and trade multiple pairs independently (e.g., BTC at 23:00, LINK at 23:45).
 - **Self-Optimizing**: Buy time adjusts daily based on 60-day historical analysis with AI-powered recommendations.
+- **Configurable Report Verbosity**: Analysis workflow supports short (AI summary only) or full (detailed breakdown) Discord reports.
 - **Portfolio Balance Tracking**: Automatic balance checking and reporting via Discord with real-time valuations in THB and USD.
 - **Multi-Layer Safeguards**: Prevents double-buying with `LAST_BUY_DATE` tracking and workflow concurrency control.
 - **Detailed Logging**: All trades logged to GitHub Gist with THB and USD amounts for portfolio tracking.
@@ -50,6 +51,9 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository vari
 - **Trigger**: Manual dispatch or push to main
 - **Concurrency**: Only one analysis runs at a time (cancel-in-progress)
 - **Environment**: Uses `binanceus` exchange to avoid geo-restrictions
+- **Report Mode**: Configurable via `short_report` input (default: true)
+  - **Short Report (true)**: Sends AI summary only (~8 lines) - ideal for daily automated runs
+  - **Full Report (false)**: Sends detailed analysis with all time period breakdowns - use for deep dives
 
 **Trader Workflow (`daily_dca.yml`)**:
 - **Trigger**: **Manual dispatch ONLY** (no automatic cron schedule by design). Triggered via GitHub Actions UI or workflow_dispatch API
@@ -71,7 +75,8 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository vari
 2. Fetches 60 days of 15-minute OHLCV data from Binance
 3. Calculates metrics: `median_miss`, `win_rate`, `dca_price` for each 15-min slot
 4. Gemini AI synthesizes recommendation across 14/30/45/60-day periods
-5. Updates `DCA_TARGET_MAP["BTC_THB"]["TIME"]` with optimal buy time
+5. Sends Discord report (short AI summary by default, full analysis if configured)
+6. Updates `DCA_TARGET_MAP["BTC_THB"]["TIME"]` with optimal buy time
 
 ### Trade Execution Cycle
 1. **Manual trigger** via GitHub Actions UI (Actions tab → Daily Crypto DCA → Run workflow) or workflow_dispatch API call
@@ -136,7 +141,7 @@ The system fetches real-time THB→USD exchange rates from multiple sources:
 Trades are automatically logged to Ghostfolio for portfolio tracking:
 - **Account Mapping**: Maps crypto symbols to Ghostfolio accounts via `PORTFOLIO_ACCOUNT_MAP` (falls back to DEFAULT)
 - **Precision**: 8-decimal quantity formatting (e.g., 0.00012345 BTC)
-- **Comment Format**: `฿800.00 - $25.10` (shows both THB and USD spent)
+- **Comment Format**: `฿800.00 - $25.10 - tx_abc123de` (shows THB, USD, and exchange order ID)
 - **Data Source**: Yahoo Finance (BTCUSD, LINKUSD, etc.) - free tier compatible
 - **Timezone Support**: Uses configured TIMEZONE, converts to UTC for Ghostfolio
 - **Timeout**: 30 seconds for all Ghostfolio API requests (doubled from standard)
