@@ -104,6 +104,48 @@ def get_balances():
     
     return result.get('result', {})
 
+def get_order_history(symbol, limit=100):
+    """Fetch order history for a specific symbol."""
+    payload = {
+        "sym": symbol,
+        "lmt": limit
+    }
+    result = bitkub_request('POST', '/api/v3/market/my-order-history', payload)
+    
+    if result.get('error') != 0:
+        print(f"⚠️ Failed to fetch order history for {symbol}: Error {result.get('error')}")
+        return []
+    
+    return result.get('result', [])
+
+def aggregate_buy_orders(coins):
+    """Fetch and aggregate all BUY orders for given coins."""
+    all_orders = {}
+    
+    for coin in coins:
+        symbol = f"THB_{coin.upper()}"
+        orders = get_order_history(symbol)
+        
+        if not orders:
+            continue
+        
+        # Filter for filled buy orders only
+        buy_orders = []
+        for order in orders:
+            if order.get('side') == 'buy' and order.get('filled', 0) > 0:
+                buy_orders.append({
+                    'amount_crypto': float(order.get('filled', 0)) / float(order.get('rate', 1)),
+                    'amount_thb': float(order.get('filled', 0)),
+                    'rate': float(order.get('rate', 0)),
+                    'timestamp': order.get('ts', 0)
+                })
+        
+        if buy_orders:
+            all_orders[coin.upper()] = buy_orders
+            print(f"✓ Found {len(buy_orders)} buy orders for {coin}")
+    
+    return all_orders
+
 def get_bitkub_prices(coin_list):
     """Fetch current prices from Bitkub TradingView API (same as app uses)."""
     prices = {}
@@ -209,6 +251,10 @@ def main():
     # Get FX rate
     fx_rate = get_thb_usd_rate()
     
+    # Fetch order history for all coins
+    print("\n📜 Fetching order history...")
+    order_history = aggregate_buy_orders(coins)
+    
     # Build report
     report_lines = []
     total_value_thb = 0
@@ -258,6 +304,46 @@ def main():
         send_discord_notification(msg)
         return
     
+    # Build order history section
+    order_lines = []
+    total_invested_thb = 0
+    total_invested_usd = 0
+    
+    if order_history:
+        order_lines.append("\n📊 **Purchase History**\n")
+        
+        for coin in sorted(order_history.keys()):
+            orders = order_history[coin]
+            
+            # Calculate totals for this coin
+            total_crypto = sum(o['amount_crypto'] for o in orders)
+            total_thb = sum(o['amount_thb'] for o in orders)
+            total_usd_for_coin = total_thb * fx_rate
+            
+            total_invested_thb += total_thb
+            total_invested_usd += total_usd_for_coin
+            
+            order_lines.append(
+                f"**{coin}** ({len(orders)} orders)\n"
+                f"  Total: `{total_crypto:.8f} {coin}`\n"
+                f"  Invested: ฿{total_thb:,.2f} (${total_usd_for_coin:,.2f})\n"
+            )
+        
+        order_lines.append("─" * 40)
+        order_lines.append(
+            f"\n**💸 Total Invested**\n"
+            f"  ฿{total_invested_thb:,.2f}\n"
+            f"  ${total_invested_usd:,.2f}\n"
+        )
+    
+    # Calculate profit/loss
+    profit_loss_thb = total_value_thb - total_invested_thb
+    profit_loss_usd = total_value_usd - total_invested_usd
+    profit_loss_pct = (profit_loss_thb / total_invested_thb * 100) if total_invested_thb > 0 else 0
+    
+    pl_emoji = "📈" if profit_loss_thb >= 0 else "📉"
+    pl_sign = "+" if profit_loss_thb >= 0 else ""
+    
     # Build final message
     message = "\n".join(report_lines)
     message += "\n" + "─" * 40 + "\n"
@@ -266,6 +352,17 @@ def main():
         f"  ฿{total_value_thb:,.2f}\n"
         f"  ${total_value_usd:,.2f}\n"
     )
+    
+    # Add order history
+    if order_lines:
+        message += "\n" + "\n".join(order_lines)
+        
+        # Add P&L section
+        message += (
+            f"\n{pl_emoji} **Profit/Loss**\n"
+            f"  {pl_sign}฿{profit_loss_thb:,.2f} ({pl_sign}{profit_loss_pct:.2f}%)\n"
+            f"  {pl_sign}${profit_loss_usd:,.2f}\n"
+        )
     
     print("\n" + message)
     send_discord_notification(message)
