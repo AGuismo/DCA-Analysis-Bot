@@ -147,7 +147,8 @@ async def classify_intent(text: str) -> dict:
             print(f"  AI model {model_name} failed: {err_str}")
 
     print(f"⚠️ All AI models failed. Last error: {last_error}")
-    return {"action": "unknown", "params": {}, "reply": f"All AI models failed: {last_error}"}
+    err_msg = str(last_error).split("\n")[0][:200]
+    return {"action": "unknown", "params": {}, "reply": f"All AI models failed: {err_msg}"}
 
 
 # ---------------------------------------------------------------------------
@@ -480,6 +481,8 @@ async def on_message(message: discord.Message):
     elif action == "unknown":
         reply = intent.get("reply", "")
         if reply:
+            # Truncate to stay under Discord's 2000-char limit
+            reply = reply[:300]
             await message.reply(f"❓ I didn't understand that: *{reply}*\nType **help** to see available commands.")
         else:
             await message.reply("❓ I didn't understand that. Type **help** to see available commands.")
