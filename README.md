@@ -207,6 +207,8 @@ A self-hosted Discord bot (`discord_bot.py`) that lets you control the DCA syste
 - **Trigger Analysis**: "Run analysis for BTC" / "Full analysis for BTC and LINK"
 - **Check Portfolio**: "Show balance" / "Monthly report" / "Full portfolio"
 - **View Config**: "Show status" / "What's the current config?"
+- **View Accounts**: "Show accounts" / "Portfolio account map"
+- **Update DCA Config**: "Set BTC amount to 600" / "Set BTC time to 22:00" / "Disable LINK"
 
 All commands are interpreted via Gemini AI — just type naturally.
 
@@ -233,6 +235,7 @@ python discord_bot.py
 - **With `DISCORD_CHANNEL_ID` set**: Bot responds to all messages in that channel
 - **Without it**: Bot only responds to @mentions and DMs
 - **With `DISCORD_ALLOWED_USERS` set**: Only listed user IDs can trigger actions
+- **DCA updates are validated**: AMOUNT must be 20–800 THB, TIME must be HH:MM, BUY_ENABLED must be bool. Cannot add/remove symbols — only update existing ones.
 
 ### Hosting
 The bot runs separately from GitHub Actions — anywhere with Python 3.9+ and internet:

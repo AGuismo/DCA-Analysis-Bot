@@ -50,11 +50,15 @@ ALLOWED_USERS = os.environ.get("DISCORD_ALLOWED_USERS", "")
 
 
 # ---------------------------------------------------------------------------
-# Gemini setup — uses flash-lite for fast, cheap intent classification
+# Gemini setup — candidate models in order of preference (fast → fallback)
 # ---------------------------------------------------------------------------
 
 genai.configure(api_key=GEMINI_API_KEY)
-ai_model = genai.GenerativeModel("gemini-2.5-flash-lite")
+AI_MODEL_CANDIDATES = [
+    "gemini-2.5-flash",        # Fast and capable (preferred)
+    "gemini-2.5-flash-lite",   # Optimized for speed/volume
+    "gemini-2.5-pro",          # High-capability fallback
+]
 
 CLASSIFY_PROMPT = """You are a command classifier for a cryptocurrency DCA automation system.
 Given a user message, classify the intent and extract parameters.
@@ -68,31 +72,82 @@ Available actions:
    - short_report: true for balance only, false for full with trade history (default: false)
    - monthly_report: true for entire previous month's trade history (default: false)
 
-3. "status" - Show current DCA configuration
+3. "update_dca" - Update DCA configuration for a symbol
+   - symbol: trading pair key like "BTC_THB" or "LINK_THB"
+   - field: one of "TIME", "AMOUNT", "BUY_ENABLED"
+   - value: new value (HH:MM for TIME, number 20-800 for AMOUNT, true/false for BUY_ENABLED)
 
-4. "help" - Show available commands
+4. "status" - Show current DCA configuration
 
-5. "unknown" - Message is not a recognized command
+5. "accounts" - Show Ghostfolio portfolio account mapping
+
+6. "help" - Show available commands
+
+7. "unknown" - Message is not a recognized command
 
 Respond with ONLY valid JSON, no markdown fences:
 {"action": "...", "params": {...}, "reply": "Brief description of what will be done"}"""
 
 
+# Valid actions the bot supports
+VALID_ACTIONS = {"analyze", "portfolio", "status", "update_dca", "accounts", "help", "unknown"}
+
+
+def _validate_intent(intent: dict) -> dict:
+    """Validate and sanitize the AI-classified intent before use."""
+    if not isinstance(intent, dict):
+        return {"action": "unknown", "params": {}, "reply": ""}
+
+    action = intent.get("action", "unknown")
+    if not isinstance(action, str) or action not in VALID_ACTIONS:
+        return {"action": "unknown", "params": {}, "reply": ""}
+
+    params = intent.get("params", {})
+    if not isinstance(params, dict):
+        params = {}
+
+    # For update_dca, enforce required param types from the AI
+    if action == "update_dca":
+        symbol = params.get("symbol")
+        field = params.get("field")
+        value = params.get("value")
+        if not isinstance(symbol, str) or not symbol.strip():
+            return {"action": "unknown", "params": {}, "reply": "Could not determine symbol"}
+        if not isinstance(field, str) or not field.strip():
+            return {"action": "unknown", "params": {}, "reply": "Could not determine field"}
+        if value is None:
+            return {"action": "unknown", "params": {}, "reply": "Could not determine value"}
+
+    return {"action": action, "params": params, "reply": intent.get("reply", "")}
+
+
 async def classify_intent(text: str) -> dict:
     """Use Gemini to classify user intent from natural language."""
-    try:
-        response = await asyncio.to_thread(
-            ai_model.generate_content,
-            f"{CLASSIFY_PROMPT}\n\nUser message: {text}",
-        )
-        raw = response.text.strip()
-        # Strip markdown code fences if Gemini wraps them
-        raw = re.sub(r"^```(?:json)?\s*", "", raw)
-        raw = re.sub(r"\s*```$", "", raw)
-        return json.loads(raw)
-    except Exception as e:
-        print(f"⚠️ Gemini classification failed: {e}")
-        return {"action": "unknown", "params": {}, "reply": str(e)}
+    last_error = None
+    prompt = f"{CLASSIFY_PROMPT}\n\nUser message: {text}"
+
+    for model_name in AI_MODEL_CANDIDATES:
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = await asyncio.to_thread(
+                model.generate_content,
+                prompt,
+            )
+            raw = response.text.strip()
+            # Strip markdown code fences if Gemini wraps them
+            raw = re.sub(r"^```(?:json)?\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw)
+            parsed = json.loads(raw)
+            result = _validate_intent(parsed)
+            print(f"  AI model: {model_name} ✅")
+            return result
+        except Exception as e:
+            last_error = e
+            err_str = str(e).split("\n")[0]
+            print(f"  AI model {model_name} failed: {err_str}")
+
+    print(f"⚠️ All AI models failed. Last error: {last_error}")
+    return {"action": "unknown", "params": {}, "reply": f"All AI models failed: {last_error}"}
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +185,17 @@ def get_repo_variable(name: str) -> Optional[str]:
     except Exception as e:
         print(f"❌ GitHub API error: {e}")
     return None
+
+
+def update_repo_variable(name: str, value: str) -> bool:
+    """Update a GitHub Actions repository variable. Returns True on success."""
+    url = f"{GH_API}/repos/{GITHUB_REPO}/actions/variables/{name}"
+    try:
+        r = requests.patch(url, json={"name": name, "value": value}, headers=GH_HEADERS, timeout=10)
+        return r.status_code == 204
+    except Exception as e:
+        print(f"❌ GitHub API error: {e}")
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -205,6 +271,110 @@ async def handle_status(params: dict, message: discord.Message):
     await message.reply("\n".join(lines))
 
 
+async def handle_update_dca(params: dict, message: discord.Message):
+    """Update a field in DCA_TARGET_MAP and save to GitHub."""
+    symbol = str(params.get("symbol", "")).upper()
+    field = str(params.get("field", "")).upper()
+    value = params.get("value")
+
+    if not symbol or not field or value is None:
+        await message.reply("❌ Missing required params: `symbol`, `field`, `value`")
+        return
+
+    # Validate field
+    allowed_fields = {"TIME", "AMOUNT", "BUY_ENABLED"}
+    if field not in allowed_fields:
+        await message.reply(f"❌ Can only update: {', '.join(sorted(allowed_fields))}")
+        return
+
+    # Validate and normalize value
+    if field == "TIME":
+        val_str = str(value)
+        if not re.match(r"^\d{2}:\d{2}$", val_str):
+            await message.reply("❌ TIME must be in HH:MM format (e.g., `23:00`)")
+            return
+        h, m = map(int, val_str.split(":"))
+        if not (0 <= h <= 23 and 0 <= m <= 59):
+            await message.reply("❌ TIME must be between 00:00 and 23:59")
+            return
+
+    elif field == "AMOUNT":
+        try:
+            value = float(value)
+            if value < 20 or value > 800:
+                raise ValueError("out of range")
+            if value == int(value):
+                value = int(value)
+        except (ValueError, TypeError):
+            await message.reply("❌ AMOUNT must be a number between 20 and 800")
+            return
+
+    elif field == "BUY_ENABLED":
+        if str(value).lower() in ("true", "yes", "on", "1", "enable", "enabled"):
+            value = True
+        elif str(value).lower() in ("false", "no", "off", "0", "disable", "disabled"):
+            value = False
+        else:
+            await message.reply("❌ BUY_ENABLED must be true or false")
+            return
+
+    # Fetch current map
+    raw = get_repo_variable("DCA_TARGET_MAP")
+    if not raw:
+        await message.reply("❌ Could not fetch current DCA_TARGET_MAP")
+        return
+
+    try:
+        target_map = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        await message.reply("❌ DCA_TARGET_MAP is malformed, cannot update safely")
+        return
+
+    # Verify symbol exists
+    if symbol not in target_map:
+        available = ", ".join(target_map.keys())
+        await message.reply(f"❌ Symbol **{symbol}** not found. Available: {available}")
+        return
+
+    if not isinstance(target_map[symbol], dict):
+        await message.reply(f"❌ Config for {symbol} is not in dict format, cannot update")
+        return
+
+    # Apply update
+    old_value = target_map[symbol].get(field)
+    target_map[symbol][field] = value
+
+    # Save back to GitHub
+    new_json = json.dumps(target_map, separators=(",", ":"))
+    if update_repo_variable("DCA_TARGET_MAP", new_json):
+        await message.reply(
+            f"✅ Updated **{symbol}** → **{field}**: `{old_value}` → `{value}`"
+        )
+    else:
+        await message.reply("❌ Failed to save DCA_TARGET_MAP to GitHub")
+
+
+async def handle_accounts(params: dict, message: discord.Message):
+    """Fetch and display the PORTFOLIO_ACCOUNT_MAP configuration."""
+    raw = get_repo_variable("PORTFOLIO_ACCOUNT_MAP")
+    if not raw:
+        await message.reply("❌ Could not fetch PORTFOLIO_ACCOUNT_MAP from GitHub")
+        return
+
+    try:
+        account_map = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        await message.reply(f"⚠️ PORTFOLIO_ACCOUNT_MAP is malformed:\n```{raw[:500]}```")
+        return
+
+    lines = ["**🏦 Ghostfolio Account Mapping**\n"]
+    for symbol, account_id in account_map.items():
+        label = "(default fallback)" if symbol == "DEFAULT" else ""
+        lines.append(f"• **{symbol}** → `{account_id}` {label}".rstrip())
+
+    await message.reply("\n".join(lines))
+
+
 HELP_TEXT = """**🤖 DCA Bot — Natural Language Commands**
 
 **Analysis:**
@@ -217,6 +387,11 @@ HELP_TEXT = """**🤖 DCA Bot — Natural Language Commands**
 
 **DCA Config:**
 • "Show status" / "What's the current config?"
+• "Show accounts" / "Portfolio account map"
+• "Set BTC amount to 600" / "Change LINK amount to 200"
+• "Set BTC time to 22:00"
+• "Disable LINK" / "Enable BTC"
+✅ AMOUNT range: 20–800 THB per coin
 
 All commands are interpreted via AI — just type naturally!
 """
@@ -239,6 +414,8 @@ ACTION_HANDLERS = {
     "analyze": handle_analyze,
     "portfolio": handle_portfolio,
     "status": handle_status,
+    "update_dca": handle_update_dca,
+    "accounts": handle_accounts,
     "help": handle_help,
 }
 
@@ -300,8 +477,14 @@ async def on_message(message: discord.Message):
     handler = ACTION_HANDLERS.get(action)
     if handler:
         await handler(params, message)
+    elif action == "unknown":
+        reply = intent.get("reply", "")
+        if reply:
+            await message.reply(f"❓ I didn't understand that: *{reply}*\nType **help** to see available commands.")
+        else:
+            await message.reply("❓ I didn't understand that. Type **help** to see available commands.")
     else:
-        await message.reply(HELP_TEXT)
+        await message.reply("❓ I didn't understand that. Type **help** to see available commands.")
 
 
 # ---------------------------------------------------------------------------
