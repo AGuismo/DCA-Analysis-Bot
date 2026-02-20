@@ -12,6 +12,7 @@ The system consists of the following files:
 | `portfolio_balance.py` | Portfolio reporter — fetches balances, calculates THB/USD value, sends Discord report. |
 | `portfolio_logger.py` | Logs individual trades to Ghostfolio portfolio tracker. |
 | `gist_logger.py` | Appends trade records to a GitHub Gist as a markdown ledger. |
+| `discord_bot.py` | Discord bot — natural language control of workflows and DCA config. Runs separately. |
 
 **Workflows** (`.github/workflows/`):
 
@@ -197,4 +198,44 @@ Trades are automatically logged to Ghostfolio for portfolio tracking:
 | **Time Window** | `is_time_to_trade()` | Within ±5 min or catch-up | Out-of-window execution |
 | **Date Check** | Per-symbol loop | `LAST_BUY_DATE == today` | Same-day duplicate |
 | **API Update** | Post-trade | 3 retries, fail loudly | Silent failure risk |
+
+## Discord Bot (Natural Language Control)
+
+A self-hosted Discord bot (`discord_bot.py`) that lets you control the DCA system via natural language chat.
+
+### Capabilities
+- **Trigger Analysis**: "Run analysis for BTC" / "Full analysis for BTC and LINK"
+- **Check Portfolio**: "Show balance" / "Monthly report" / "Full portfolio"
+- **View Config**: "Show status" / "What's the current config?"
+
+All commands are interpreted via Gemini AI — just type naturally.
+
+### Setup
+
+1. **Create a Discord Application** at [discord.com/developers](https://discord.com/developers/applications)
+2. Under **Bot** settings, enable **Message Content Intent**
+3. Generate a **Bot Token** and invite the bot to your server (Send Messages, Read Messages permissions)
+4. Install dependencies: `pip install -r bot_requirements.txt`
+5. Set environment variables and run:
+
+```bash
+export DISCORD_BOT_TOKEN="your-bot-token"
+export GEMINI_API_KEY="your-gemini-key"
+export GH_PAT="your-github-pat"           # Same PAT as GH_PAT_FOR_VARS (repo scope)
+export GITHUB_REPO="owner/repo"            # e.g. "simon/DCA-Analysis"
+export DISCORD_CHANNEL_ID="123456789"      # Optional: restrict to one channel
+export DISCORD_ALLOWED_USERS="111,222"     # Optional: restrict to specific Discord user IDs
+
+python discord_bot.py
+```
+
+### Behaviour
+- **With `DISCORD_CHANNEL_ID` set**: Bot responds to all messages in that channel
+- **Without it**: Bot only responds to @mentions and DMs
+- **With `DISCORD_ALLOWED_USERS` set**: Only listed user IDs can trigger actions
+
+### Hosting
+The bot runs separately from GitHub Actions — anywhere with Python 3.9+ and internet:
+- Local machine / Raspberry Pi
+- Free tier: [Railway](https://railway.app), [Render](https://render.com), [Fly.io](https://fly.io), [Oracle Cloud free VM](https://www.oracle.com/cloud/free/)
 

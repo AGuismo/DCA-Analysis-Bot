@@ -4,6 +4,9 @@ __pycache__/
 .env
 venv/
 
+# Bot launcher with hardcoded secrets
+run_bot.sh
+
 # Ghostfolio import script and CryptoCompare data
 ghostfolio_import.py
 ghostfolio_cleanup.py
