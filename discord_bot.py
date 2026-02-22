@@ -75,7 +75,7 @@ Available actions:
 3. "update_dca" - Update DCA configuration for a symbol
    - symbol: trading pair key like "BTC_THB" or "LINK_THB"
    - field: one of "TIME", "AMOUNT", "BUY_ENABLED"
-   - value: new value (HH:MM for TIME, number 20-800 for AMOUNT, true/false for BUY_ENABLED)
+   - value: new value (HH:MM for TIME, number 20-1000 for AMOUNT, true/false for BUY_ENABLED)
 
 4. "status" - Show current DCA configuration
 
@@ -302,12 +302,12 @@ async def handle_update_dca(params: dict, message: discord.Message):
     elif field == "AMOUNT":
         try:
             value = float(value)
-            if value < 20 or value > 800:
+            if value < 20 or value > 1000:
                 raise ValueError("out of range")
             if value == int(value):
                 value = int(value)
         except (ValueError, TypeError):
-            await message.reply("❌ AMOUNT must be a number between 20 and 800")
+            await message.reply("❌ AMOUNT must be a number between 20 and 1000")
             return
 
     elif field == "BUY_ENABLED":
@@ -392,7 +392,7 @@ HELP_TEXT = """**🤖 DCA Bot — Natural Language Commands**
 • "Set BTC amount to 600" / "Change LINK amount to 200"
 • "Set BTC time to 22:00"
 • "Disable LINK" / "Enable BTC"
-✅ AMOUNT range: 20–800 THB per coin
+✅ AMOUNT range: 20–1000 THB per coin
 
 All commands are interpreted via AI — just type naturally!
 """

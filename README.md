@@ -235,7 +235,7 @@ python discord_bot.py
 - **With `DISCORD_CHANNEL_ID` set**: Bot responds to all messages in that channel
 - **Without it**: Bot only responds to @mentions and DMs
 - **With `DISCORD_ALLOWED_USERS` set**: Only listed user IDs can trigger actions
-- **DCA updates are validated**: AMOUNT must be 20–800 THB, TIME must be HH:MM, BUY_ENABLED must be bool. Cannot add/remove symbols — only update existing ones.
+- **DCA updates are validated**: AMOUNT must be 20–1000 THB, TIME must be HH:MM, BUY_ENABLED must be bool. Cannot add/remove symbols — only update existing ones.
 
 ### Hosting
 The bot runs separately from GitHub Actions — anywhere with Python 3.9+ and internet:
