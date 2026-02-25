@@ -1,5 +1,6 @@
 import os
 import json
+import time
 import requests
 from datetime import datetime, timedelta, timezone as dt_timezone
 
@@ -53,14 +54,17 @@ def get_account_id(symbol, portfolio_map):
     
     return account_id
 
-def authenticate_ghostfolio(base_url, access_token, timeout=30):
+def authenticate_ghostfolio(base_url, access_token, timeout=30, retries=3, delay=2):
     """
     Authenticate to Ghostfolio and get Bearer JWT token.
+    Retries on transient network/SSL errors.
     
     Args:
         base_url: Ghostfolio instance URL
         access_token: User's access token
         timeout: Request timeout in seconds (doubled from standard 15s)
+        retries: Number of attempts before giving up
+        delay: Seconds to wait between retries
     
     Returns:
         Bearer token string or None on failure
@@ -68,26 +72,35 @@ def authenticate_ghostfolio(base_url, access_token, timeout=30):
     url = f"{base_url}/api/v1/auth/anonymous"
     payload = {"accessToken": access_token}
     
-    try:
-        r = requests.post(url, json=payload, timeout=timeout)
-        
-        if r.status_code != 201:
-            print(f"❌ Ghostfolio auth failed ({r.status_code}): {r.text}")
+    for attempt in range(1, retries + 1):
+        try:
+            r = requests.post(url, json=payload, timeout=timeout)
+            
+            if r.status_code != 201:
+                print(f"❌ Ghostfolio auth failed ({r.status_code}): {r.text}")
+                return None
+            
+            token = r.json().get("authToken")
+            if not token:
+                print(f"❌ No authToken in Ghostfolio response")
+                return None
+            
+            return token
+            
+        except requests.exceptions.Timeout:
+            print(f"❌ Ghostfolio auth timed out (attempt {attempt}/{retries})")
+        except (requests.exceptions.ConnectionError, requests.exceptions.SSLError) as e:
+            print(f"⚠️ Ghostfolio auth connection error (attempt {attempt}/{retries}): {e}")
+        except Exception as e:
+            print(f"❌ Ghostfolio authentication error: {e}")
             return None
         
-        token = r.json().get("authToken")
-        if not token:
-            print(f"❌ No authToken in Ghostfolio response")
-            return None
-        
-        return token
-        
-    except requests.exceptions.Timeout:
-        print(f"❌ Ghostfolio authentication timed out after {timeout}s")
-        return None
-    except Exception as e:
-        print(f"❌ Ghostfolio authentication error: {e}")
-        return None
+        if attempt < retries:
+            print(f"   Retrying in {delay}s...")
+            time.sleep(delay)
+    
+    print(f"❌ Ghostfolio authentication failed after {retries} attempts")
+    return None
 
 def log_to_ghostfolio(trade_data, symbol, account_id):
     """
@@ -161,7 +174,7 @@ def log_to_ghostfolio(trade_data, symbol, account_id):
             "unitPrice": round(trade_data['usd_price_per_unit'], 2)
         }
         
-        # 6. Import to Ghostfolio (doubled timeout to 30s)
+        # 6. Import to Ghostfolio (with retry for transient errors)
         url = f"{GHOSTFOLIO_URL}/api/v1/import"
         headers = {
             "Authorization": f"Bearer {bearer_token}",
@@ -169,18 +182,29 @@ def log_to_ghostfolio(trade_data, symbol, account_id):
         }
         payload = {"activities": [activity]}
         
-        r = requests.post(url, headers=headers, json=payload, timeout=30)
+        for attempt in range(1, 4):
+            try:
+                r = requests.post(url, headers=headers, json=payload, timeout=30)
+                
+                if r.status_code == 201:
+                    print(f"✅ Successfully logged to Ghostfolio: {quantity:.8f} {symbol} @ ${activity['unitPrice']:.2f}")
+                    return True
+                else:
+                    print(f"❌ Ghostfolio import failed ({r.status_code}): {r.text}")
+                    return False
+                    
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError, requests.exceptions.SSLError) as e:
+                print(f"⚠️ Ghostfolio import error (attempt {attempt}/3): {e}")
+                if attempt < 3:
+                    print(f"   Retrying in 2s...")
+                    time.sleep(2)
+            except Exception as e:
+                print(f"❌ Ghostfolio logging error: {e}")
+                return False
         
-        if r.status_code == 201:
-            print(f"✅ Successfully logged to Ghostfolio: {quantity:.8f} {symbol} @ ${activity['unitPrice']:.2f}")
-            return True
-        else:
-            print(f"❌ Ghostfolio import failed ({r.status_code}): {r.text}")
-            return False
-            
-    except requests.exceptions.Timeout:
-        print(f"❌ Ghostfolio import timed out after 30s")
+        print(f"❌ Ghostfolio import failed after 3 attempts")
         return False
+    
     except Exception as e:
         print(f"❌ Ghostfolio logging error: {e}")
         return False
