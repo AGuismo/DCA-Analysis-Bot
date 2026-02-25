@@ -65,7 +65,7 @@ Given a user message, classify the intent and extract parameters.
 
 Available actions:
 1. "analyze" - Run crypto market analysis
-   - symbols: comma-separated pairs like "BTC/USDT, LINK/USDT" (default: "BTC/USDT, LINK/USDT")
+   - symbols: comma-separated pairs like "BTC/USDT, LINK/USDT" (default: derive from current DCA config)
    - short_report: true for AI summary only, false for full breakdown (default: true)
 
 2. "portfolio" - Check portfolio balance
@@ -203,10 +203,44 @@ def update_repo_variable(name: str, value: str) -> bool:
 # Action handlers
 # ---------------------------------------------------------------------------
 
+def _symbols_from_dca_map() -> str:
+    """Derive analysis symbols from DCA_TARGET_MAP on GitHub.
+
+    Fetches the current DCA_TARGET_MAP repo variable and converts
+    THB trading pair keys to USDT pairs for CCXT analysis.
+    Returns comma-separated string like 'BTC/USDT, LINK/USDT, SUI/USDT'.
+    Falls back to 'BTC/USDT' if the map cannot be read.
+    """
+    raw = get_repo_variable("DCA_TARGET_MAP")
+    if not raw:
+        return "BTC/USDT"
+    try:
+        target_map = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return "BTC/USDT"
+
+    symbols = []
+    for key in target_map:
+        if "_THB" in key:
+            base = key.replace("_THB", "")
+            symbols.append(f"{base}/USDT")
+        elif "/" in key:
+            symbols.append(key)
+        else:
+            symbols.append(key)
+    result = ", ".join(symbols) if symbols else "BTC/USDT"
+    print(f"📋 Derived symbols from DCA_TARGET_MAP: {result}")
+    return result
+
+
 async def handle_analyze(params: dict, message: discord.Message):
     """Trigger the crypto analysis workflow."""
-    symbols = params.get("symbols", "BTC/USDT, LINK/USDT")
+    symbols = params.get("symbols", "") or ""
     short = params.get("short_report", True)
+
+    # If no explicit symbols from the user, derive from DCA_TARGET_MAP
+    if not symbols.strip():
+        symbols = _symbols_from_dca_map()
 
     inputs = {
         "symbol": str(symbols),

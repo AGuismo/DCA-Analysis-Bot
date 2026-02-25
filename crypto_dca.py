@@ -64,7 +64,7 @@ def get_config_for_symbol(symbol_thb, target_map):
     try:
         base = symbol_thb.split('_')[0]
         keys_to_check.append(f"{base}/USDT")
-    except:
+    except Exception:
         pass
 
     found_entry = None
@@ -101,14 +101,13 @@ def is_time_to_trade(target_time_str):
     We check if current time is within [target, target + 15m).
     """
     now = datetime.now(SELECTED_TZ)
-    current_hm = now.strftime("%H:%M")
     
     # Parse target
     try:
         t_hour, t_minute = map(int, target_time_str.split(':'))
         target_dt = now.replace(hour=t_hour, minute=t_minute, second=0, microsecond=0)
-    except:
-        print(f"❌ Invalid target time format: {target_time_str}")
+    except (ValueError, AttributeError) as e:
+        print(f"❌ Invalid target time format: {target_time_str} ({e})")
         return False
     
     # If target is tomorrow (e.g. now=23:50, target=00:10), this naive compare fails.

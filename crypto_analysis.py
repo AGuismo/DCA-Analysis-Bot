@@ -10,17 +10,56 @@ from datetime import datetime, timedelta, timezone
 # --- Config ---
 EXCHANGE_ID = os.environ.get("EXCHANGE_ID", "binance")
 # Support comma-separated list OR JSON array
-SYMBOLS_ENV = os.environ.get("SYMBOL", '["BTC/USDT"]')
+SYMBOLS_ENV = os.environ.get("SYMBOL", "")
 
-try:
-    # Try parsing as JSON first
-    SYMBOLS = json.loads(SYMBOLS_ENV)
-    if not isinstance(SYMBOLS, list):
-        # If valid JSON but not a list (e.g. string), force list
-        SYMBOLS = [str(SYMBOLS)]
-except json.JSONDecodeError:
-    # Fallback to comma-separated string
-    SYMBOLS = [s.strip() for s in SYMBOLS_ENV.split(',')]
+def _parse_symbols(symbols_env: str, dca_map_env: str) -> list:
+    """Resolve the list of symbols to analyze.
+
+    Priority:
+      1. Explicit SYMBOL env var (comma-separated or JSON array).
+      2. Derive from DCA_TARGET_MAP keys (BTC_THB -> BTC/USDT).
+      3. Fallback to ["BTC/USDT"].
+    """
+    # 1. Explicit SYMBOL env var
+    if symbols_env.strip():
+        try:
+            parsed = json.loads(symbols_env)
+            if isinstance(parsed, list):
+                result = [str(s) for s in parsed]
+            else:
+                result = [str(parsed)]
+        except (json.JSONDecodeError, ValueError):
+            result = [s.strip() for s in symbols_env.split(",") if s.strip()]
+        print(f"📋 Symbols from SYMBOL env var: {result}")
+        return result
+
+    # 2. Derive from DCA_TARGET_MAP
+    try:
+        dca_map = json.loads(dca_map_env) if dca_map_env else {}
+    except (json.JSONDecodeError, ValueError):
+        dca_map = {}
+
+    if dca_map:
+        symbols = []
+        for key in dca_map:
+            # Convert THB keys to USDT pairs (BTC_THB -> BTC/USDT)
+            if "_THB" in key:
+                base = key.replace("_THB", "")
+                symbols.append(f"{base}/USDT")
+            elif "/" in key:
+                symbols.append(key)
+            else:
+                symbols.append(key)
+        if symbols:
+            print(f"📋 Symbols derived from DCA_TARGET_MAP: {symbols}")
+            return symbols
+
+    # 3. Fallback
+    print("⚠️ No SYMBOL env var or DCA_TARGET_MAP found. Falling back to ['BTC/USDT']")
+    return ["BTC/USDT"]
+
+
+SYMBOLS = _parse_symbols(SYMBOLS_ENV, os.environ.get("DCA_TARGET_MAP", "{}"))
 
 TIMEFRAME = "15m"
 LOCAL_TZ = os.environ.get("TIMEZONE", "Asia/Bangkok")

@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       symbol:
-        description: 'Trading Pair (e.g., BTC/USDT, ETH/USDT)'
-        required: true
-        default: 'BTC/USDT, LINK/USDT'
+        description: 'Trading pairs (e.g., BTC/USDT, SUI/USDT). Leave empty to use all symbols from DCA_TARGET_MAP.'
+        required: false
+        default: ''
       short_report:
         description: 'Send short report (AI summary only)'
         required: false
@@ -48,8 +48,9 @@ jobs:
         DCA_TARGET_MAP: ${{ vars.DCA_TARGET_MAP }} # Load existing map to preserve settings
         # Use binanceus for GitHub Actions runners (US IP) to avoid 451 errors
         EXCHANGE_ID: "binanceus"
-        # Combine inputs with a default list for scheduled runs
-        SYMBOL: ${{ inputs.symbol || 'BTC/USDT, LINK/USDT' }}
+        # If explicit input provided, use it. Otherwise leave empty so
+        # crypto_analysis.py derives symbols from DCA_TARGET_MAP automatically.
+        SYMBOL: ${{ inputs.symbol || '' }}
         # Report format: true = AI summary only, false = full detailed analysis (default: true)
         # Only check input value on manual dispatch; push/schedule always get short report
         SHORT_REPORT: ${{ github.event_name == 'workflow_dispatch' && inputs.short_report == false && 'false' || 'true' }}

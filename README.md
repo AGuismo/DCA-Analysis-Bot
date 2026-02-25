@@ -16,7 +16,7 @@ The system consists of the following files:
 
 **Workflows** (`.github/workflows/`):
 
-1. **`crypto_analysis.yml`** — Runs daily (06:00 BKK / 23:00 UTC). Analyzes **60 days** of price data across **4 periods** (14, 30, 45, 60 days) for **multiple pairs** (e.g., BTC/USDT, LINK/USDT) to find the "Champion Time" for each. Uses AI synthesis to pick optimal buy time. Updates `DCA_TARGET_MAP`.
+1. **`crypto_analysis.yml`** — Runs daily (06:00 BKK / 23:00 UTC). Analyzes **60 days** of price data across **4 periods** (14, 30, 45, 60 days) for **all pairs in `DCA_TARGET_MAP`** to find the "Champion Time" for each. Uses AI synthesis to pick optimal buy time. Updates `DCA_TARGET_MAP`.
 2. **`daily_dca.yml`** — Triggered on **push to main** or **manual dispatch**. Checks if current time matches target time for any enabled symbol. Executes market buy orders.
 3. **`portfolio_check.yml`** — Runs **on every push** and **weekly on Sundays at noon BKK**. Fetches balances for all configured coins, calculates portfolio value in THB and USD, sends Discord report.
 
@@ -64,6 +64,7 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository vari
 - **Trigger**: Manual dispatch or push to main
 - **Concurrency**: Only one analysis runs at a time (cancel-in-progress)
 - **Environment**: Uses `binanceus` exchange to avoid geo-restrictions
+- **Symbol Resolution**: Automatically derives symbols from `DCA_TARGET_MAP` keys (e.g., `BTC_THB` → `BTC/USDT`). Override with explicit `symbol` input on manual dispatch.
 - **Report Mode**: Configurable via `short_report` input (default: true)
   - **Short Report (true)**: Sends AI summary only (~8 lines) - ideal for daily automated runs
   - **Full Report (false)**: Sends detailed analysis with all time period breakdowns - use for deep dives
@@ -89,11 +90,12 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository vari
 
 ### Daily Analysis Cycle
 1. At 06:00 Bangkok time, `crypto_analysis.yml` triggers
-2. Fetches 60 days of 15-minute OHLCV data from Binance
-3. Calculates metrics: `median_miss`, `win_rate`, `dca_price` for each 15-min slot
-4. Gemini AI synthesizes recommendation across 14/30/45/60-day periods
-5. Sends Discord report (short AI summary by default, full analysis if configured)
-6. Updates `DCA_TARGET_MAP["BTC_THB"]["TIME"]` with optimal buy time
+2. Resolves symbols from `DCA_TARGET_MAP` keys (e.g., `BTC_THB` → `BTC/USDT`, `LINK_THB` → `LINK/USDT`, `SUI_THB` → `SUI/USDT`). Can be overridden via explicit input.
+3. Fetches 60 days of 15-minute OHLCV data from Binance for each symbol
+4. Calculates metrics: `median_miss`, `win_rate`, `dca_price` for each 15-min slot
+5. Gemini AI synthesizes recommendation across 14/30/45/60-day periods
+6. Sends Discord report (short AI summary by default, full analysis if configured)
+7. Updates `DCA_TARGET_MAP["<SYMBOL>_THB"]["TIME"]` with optimal buy time for each pair
 
 ### Trade Execution Cycle
 1. **Manual trigger** via GitHub Actions UI (Actions tab → Daily Crypto DCA → Run workflow) or workflow_dispatch API call
@@ -204,7 +206,7 @@ Trades are automatically logged to Ghostfolio for portfolio tracking:
 A self-hosted Discord bot (`discord_bot.py`) that lets you control the DCA system via natural language chat.
 
 ### Capabilities
-- **Trigger Analysis**: "Run analysis for BTC" / "Full analysis for BTC and LINK"
+- **Trigger Analysis**: "Run analysis" (analyzes all symbols in DCA config) / "Analyze BTC" (specific symbol)
 - **Check Portfolio**: "Show balance" / "Monthly report" / "Full portfolio"
 - **View Config**: "Show status" / "What's the current config?"
 - **View Accounts**: "Show accounts" / "Portfolio account map"
