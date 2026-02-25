@@ -8,6 +8,14 @@ GHOSTFOLIO_URL = os.environ.get("GHOSTFOLIO_URL", "https://ghostfol.io")
 GHOSTFOLIO_TOKEN = os.environ.get("GHOSTFOLIO_TOKEN")
 PORTFOLIO_ACCOUNT_MAP_JSON = os.environ.get("PORTFOLIO_ACCOUNT_MAP", "{}")
 
+# Overrides for coins where Yahoo Finance's {symbol}USD ticker is wrong or maps to the
+# wrong asset. Keys are the base crypto symbol (e.g. "SUI"). Values are the exact
+# dataSource + symbol pair that Ghostfolio should use instead.
+# COINGECKO symbols are the CoinGecko coin ID (lowercase).
+SYMBOL_DATASOURCE_OVERRIDES = {
+    "SUI": {"dataSource": "COINGECKO", "symbol": "sui"},
+}
+
 # Timezone Configuration
 TIMEZONE_NAME = os.environ.get("TIMEZONE", "Asia/Bangkok")
 try:
@@ -129,16 +137,26 @@ def log_to_ghostfolio(trade_data, symbol, account_id):
         # 4. Format quantity to 8 decimals
         quantity = float(f"{trade_data['amount_crypto']:.8f}")
         
-        # 5. Build activity
+        # 5. Build activity — use datasource/symbol override if Yahoo Finance
+        # doesn't carry this coin correctly (e.g. SUIUSD maps to "Salmonation").
+        override = SYMBOL_DATASOURCE_OVERRIDES.get(symbol)
+        if override:
+            gf_datasource = override["dataSource"]
+            gf_symbol = override["symbol"]
+            print(f"   Using override for {symbol}: {gf_datasource}/{gf_symbol}")
+        else:
+            gf_datasource = "YAHOO"
+            gf_symbol = f"{symbol}USD"  # e.g., BTCUSD, LINKUSD
+
         activity = {
             "accountId": account_id,
             "comment": comment,
             "currency": "USD",
-            "dataSource": "YAHOO",
+            "dataSource": gf_datasource,
             "date": date_str,
             "fee": 0,
             "quantity": quantity,
-            "symbol": f"{symbol}USD",  # e.g., BTCUSD, LINKUSD
+            "symbol": gf_symbol,
             "type": "BUY",
             "unitPrice": round(trade_data['usd_price_per_unit'], 2)
         }
