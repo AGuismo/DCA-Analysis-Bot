@@ -12,3 +12,4 @@ ghostfolio_import.py
 ghostfolio_cleanup.py
 Cryptocompare-All-Data.json
 docker_bot.sh
+docker_stats.sh
