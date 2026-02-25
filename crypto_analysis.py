@@ -4,6 +4,7 @@ import requests
 import os
 import re
 import json
+import time
 import google.generativeai as genai
 from datetime import datetime, timedelta, timezone
 
@@ -238,6 +239,10 @@ def get_ai_summary(full_report, current_symbol):
                 # creating a short error string to print
                 err_str = str(e).split('\n')[0] 
                 print(f"  -> Failed: {err_str}...")
+                # Wait before trying the next candidate to avoid rate-locking
+                if model_name != candidates[-1]:
+                    print("  -> Waiting 1mn before next model attempt...")
+                    time.sleep(60)
         
         if result_text:
             # Try to extract the time
