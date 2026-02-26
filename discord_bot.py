@@ -63,9 +63,14 @@ AI_MODEL_CANDIDATES = [
 CLASSIFY_PROMPT = """You are a command classifier for a cryptocurrency DCA automation system.
 Given a user message, classify the intent and extract parameters.
 
+IMPORTANT: Users refer to coins by name only — "BTC", "LINK", "SUI", "ETH", "bitcoin", "chainlink", etc.
+Never require or expect the user to include "/USDT", "_THB", or any trading pair notation.
+Always derive the coin symbol from the name and convert it to the correct internal format.
+
 Available actions:
 1. "analyze" - Run crypto market analysis
-   - symbols: comma-separated pairs like "BTC/USDT, LINK/USDT" (default: derive from current DCA config)
+   - symbols: comma-separated coin names exactly as the user said — e.g. "BTC, LINK, SUI" (default: derive from current DCA config)
+     Accept plain names like "BTC", "bitcoin", "link", "chainlink" — do NOT convert to USDT pairs here.
    - short_report: true for AI summary only, false for full breakdown (default: true)
 
 2. "portfolio" - Check portfolio balance
@@ -73,9 +78,13 @@ Available actions:
    - monthly_report: true for entire previous month's trade history (default: false)
 
 3. "update_dca" - Update DCA configuration for a symbol
-   - symbol: trading pair key like "BTC_THB" or "LINK_THB"
+   - symbol: ALWAYS use the "COIN_THB" format — e.g. "BTC_THB", "LINK_THB", "SUI_THB".
+     Convert any coin name or abbreviation the user mentions to this format:
+     "btc" → "BTC_THB", "bitcoin" → "BTC_THB", "link" → "LINK_THB", "chainlink" → "LINK_THB".
+     Never output COIN/USDT, COIN_USDT, or a bare coin name like "BTC" — always append "_THB".
    - field: one of "TIME", "AMOUNT", "BUY_ENABLED"
    - value: new value (HH:MM for TIME, number 20-1000 for AMOUNT, true/false for BUY_ENABLED)
+   Note: "disable X" or "turn off X" means BUY_ENABLED=false; "enable X" or "turn on X" means BUY_ENABLED=true.
 
 4. "status" - Show current DCA configuration
 
@@ -233,13 +242,45 @@ def _symbols_from_dca_map() -> str:
     return result
 
 
+def _to_usdt_pair(coin: str) -> str:
+    """Normalise any coin reference to a COIN/USDT pair for CCXT analysis.
+
+    Handles plain names ("BTC", "link"), COIN/USDT, COIN_USDT, COIN_THB, and
+    full names mapped via a small lookup table.
+    """
+    FULL_NAMES: dict = {
+        "bitcoin": "BTC", "ethereum": "ETH", "chainlink": "LINK",
+        "solana": "SOL", "sui": "SUI", "cardano": "ADA", "ripple": "XRP",
+        "dogecoin": "DOGE", "shiba": "SHIB", "polkadot": "DOT",
+    }
+    raw = coin.strip().lower()
+    # Resolve full English names first
+    raw = FULL_NAMES.get(raw, raw).upper()
+    # Strip known suffixes: COIN/USDT, COIN_USDT, COIN_THB, COIN/THB, etc.
+    for sep in ("/USDT", "_USDT", "/BUSD", "_BUSD", "/THB", "_THB", "/USD"):
+        if raw.endswith(sep):
+            raw = raw[: -len(sep)]
+            break
+    # Keep only the base if a "/" remains (e.g. "BTC/BNB" edge case)
+    if "/" in raw:
+        raw = raw.split("/")[0]
+    return f"{raw}/USDT"
+
+
 async def handle_analyze(params: dict, message: discord.Message):
     """Trigger the crypto analysis workflow."""
-    symbols = params.get("symbols", "") or ""
+    symbols_raw = params.get("symbols", "") or ""
     short = params.get("short_report", True)
 
-    # If no explicit symbols from the user, derive from DCA_TARGET_MAP
-    if not symbols.strip():
+    if symbols_raw.strip():
+        # Normalise plain coin names / any format to COIN/USDT for CCXT
+        symbols = ", ".join(
+            _to_usdt_pair(s)
+            for s in re.split(r"[,\s]+", symbols_raw.strip())
+            if s
+        )
+    else:
+        # Fall back to deriving from the live DCA_TARGET_MAP
         symbols = _symbols_from_dca_map()
 
     inputs = {
@@ -308,13 +349,22 @@ async def handle_status(params: dict, message: discord.Message):
 
 async def handle_update_dca(params: dict, message: discord.Message):
     """Update a field in DCA_TARGET_MAP and save to GitHub."""
-    symbol = str(params.get("symbol", "")).upper()
+    symbol = str(params.get("symbol", "")).upper().strip()
     field = str(params.get("field", "")).upper()
     value = params.get("value")
 
     if not symbol or not field or value is None:
         await message.reply("❌ Missing required params: `symbol`, `field`, `value`")
         return
+
+    # Normalise symbol to COIN_THB format regardless of what the AI returned
+    # e.g. "BTC", "BTC/USDT", "BTC_USDT", "BTC/THB" all → "BTC_THB"
+    for sep in ("/USDT", "_USDT", "/BUSD", "_BUSD", "/THB", "/USD"):
+        if symbol.endswith(sep):
+            symbol = symbol[: -len(sep)]
+            break
+    if not symbol.endswith("_THB"):
+        symbol = f"{symbol}_THB"
 
     # Validate field
     allowed_fields = {"TIME", "AMOUNT", "BUY_ENABLED"}
