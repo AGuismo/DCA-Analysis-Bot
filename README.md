@@ -20,12 +20,59 @@ The system consists of the following files:
 2. **`daily_dca.yml`** — Triggered on **push to main** or **manual dispatch**. Checks if current time matches target time for any enabled symbol. Executes market buy orders.
 3. **`portfolio_check.yml`** — Runs **monthly on the 5th at 07:00 BKK** (00:00 UTC). Fetches balances for all configured coins, calculates portfolio value in THB and USD, includes the previous month's trade history (5th-to-5th window), sends Discord report. Also runs on every push to main (short balance-only report).
 
+## System Orchestration
+
+```mermaid
+flowchart LR
+    subgraph TRIGGERS["⚡ Triggers"]
+        T1["🕕 Daily 06:00 BKK\ncron"]
+        T2["📅 Monthly 5th 07:00 BKK\ncron"]
+        T3["📤 Push to main"]
+        T4["⏰ External cron\nevery ~15 min"]
+        T5["👤 Manual / Discord Bot"]
+    end
+
+    subgraph WORKFLOWS["🔄 GitHub Actions Workflows"]
+        W1["crypto_analysis.yml\n(Analysis)"]
+        W2["daily_dca.yml\n(Trader)"]
+        W3["portfolio_check.yml\n(Portfolio)"]
+    end
+
+    subgraph OUTPUTS["📤 Outputs"]
+        O1["💬 Discord\n(AI summary / full analysis)"]
+        O2["🗄️ DCA_TARGET_MAP\n(optimal buy times updated)"]
+        O3["💬 Discord\n(trade confirmation)"]
+        O4["📓 GitHub Gist\n(trade ledger)"]
+        O5["📊 Ghostfolio\n(portfolio activity)"]
+        O6["💬 Discord\n(full monthly report)"]
+        O7["💬 Discord\n(short balance report)"]
+    end
+
+    T1 -->|"all symbols"| W1
+    T5 -->|"specific symbol optional"| W1
+    W1 --> O1
+    W1 --> O2
+
+    T4 -->|"dispatch API"| W2
+    T3 --> W2
+    T5 --> W2
+    W2 --> O3
+    W2 --> O4
+    W2 --> O5
+
+    T2 -->|"full report"| W3
+    T5 -->|"configurable"| W3
+    T3 -->|"short report"| W3
+    W3 --> O6
+    W3 --> O7
+```
+
 ## Features
 
 - **Multi-Symbol Support**: Analyze and trade multiple pairs independently (e.g., BTC at 23:00, LINK at 23:45).
 - **Self-Optimizing**: Buy time adjusts daily based on 60-day historical analysis with AI-powered recommendations.
 - **Configurable Report Verbosity**: Analysis workflow supports short (AI summary only) or full (detailed breakdown) Discord reports.
-- **Portfolio Balance Tracking**: Automatic monthly balance checking and reporting via Discord with real-time valuations in THB and USD.
+- **Portfolio Balance Tracking**: Automatic monthly balance checking and reporting via Discord with real-time valuations in THB and USD. Short balance-only report on every push to main.
 - **Multi-Layer Safeguards**: Prevents double-buying with `LAST_BUY_DATE` tracking and workflow concurrency control.
 - **Detailed Logging**: All trades logged to GitHub Gist with THB and USD amounts for portfolio tracking.
 - **Portfolio Integration**: Automatic trade logging to Ghostfolio portfolio tracker with 8-decimal precision and timezone-aware timestamps.
@@ -83,12 +130,29 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository vari
 - **Report Mode**: Adaptive based on trigger
   - **Short Report (push)**: Current holdings and total value only - fast status check
   - **Monthly Full Report (5th)**: Current holdings plus the exact previous month's trade history (5th 07:00 BKK → 5th 07:00 BKK)
-  - **Manual dispatch**: Triggers a full monthly report (same 5th-to-5th window)
+  - **Manual dispatch (GitHub Actions UI)**: Full monthly report by default (`short_report` input defaults to `false`)
+  - **Manual dispatch (Discord Bot)**: Short report by default — say "full portfolio" or "portfolio with trades" for the full monthly report
 - **Report**: Fetches balances for all coins in DCA_TARGET_MAP, calculates portfolio value, sends Discord notification
 
 ## How It Works
 
 ### Daily Analysis Cycle
+
+```mermaid
+flowchart TD
+    A["⏰ Trigger\n06:00 BKK daily cron\nOR manual dispatch"] --> B["Resolve symbols\nfrom DCA_TARGET_MAP keys\ne.g. BTC_THB → BTC/USDT"]
+    B --> C["Fetch 60 days of 15-min\nOHLCV data from Binance\nfor each symbol"]
+    C --> D["Analyze 4 periods\n14 / 30 / 45 / 60 days\nmedian_miss, win_rate, dca_price"]
+    D --> E["Gemini AI synthesis\nPicks RECOMMENDED_TIME\nacross all periods"]
+    E --> F{AI succeeded?}
+    F -->|Yes| G["Use AI time"]
+    F -->|No| H["Use 30-day\nquantitative best time"]
+    G --> I["Send Discord report\nshort=AI summary only\nfull=all period tables"]
+    H --> I
+    I --> J["Update DCA_TARGET_MAP\nCOIN_THB.TIME = recommended time\nfor each symbol"]
+    J --> K["GitHub Actions writes\nDCA_TARGET_MAP repo variable\n→ takes effect next trade run"]
+```
+
 1. At 06:00 Bangkok time, `crypto_analysis.yml` triggers
 2. Resolves symbols from `DCA_TARGET_MAP` keys (e.g., `BTC_THB` → `BTC/USDT`, `LINK_THB` → `LINK/USDT`, `SUI_THB` → `SUI/USDT`). Can be overridden via explicit input.
 3. Fetches 60 days of 15-minute OHLCV data from Binance for each symbol
@@ -98,6 +162,26 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository vari
 7. Updates `DCA_TARGET_MAP["<SYMBOL>_THB"]["TIME"]` with optimal buy time for each pair
 
 ### Trade Execution Cycle
+
+```mermaid
+flowchart TD
+    A["⏰ Trigger\nexternal cron every ~15 min\nOR manual dispatch"] --> B["⚡ Bash Quick Check\nno checkout required"]
+    B --> C{Any symbol has\nBUY_ENABLED=true\nand LAST_BUY_DATE ≠ today\nand time match?}
+    C -->|No match| D["🛑 Exit immediately\n0 resources used"]
+    C -->|Match found| E["Checkout repo\nSetup Python\nInstall deps"]
+    E --> F["Python validation\ntime window ±5 min\nor catch-up mode"]
+    F --> G{Already bought\ntoday?}
+    G -->|Yes| H["Skip symbol"]
+    G -->|No| I["Place market bid\nBitkub API"]
+    I --> J["Wait 5s for fill\nFetch order details"]
+    J --> K["Fetch THB→USD rate\nfor logging"]
+    K --> L["Log to Ghostfolio\nnon-blocking"]
+    K --> M["Log to GitHub Gist\nnon-blocking"]
+    L --> N["Send Discord alert\n✅ trade details + Ghostfolio status"]
+    M --> N
+    N --> O["Update LAST_BUY_DATE\nin DCA_TARGET_MAP\n3 retries — fails loudly"]
+```
+
 1. **Manual trigger** via GitHub Actions UI (Actions tab → Daily Crypto DCA → Run workflow) or workflow_dispatch API call
 2. **Bash Quick Check** (no checkout/Python required): Filters by `BUY_ENABLED`, `LAST_BUY_DATE`, time window
 3. If no match → Workflow ends (fast exit, no resources used)
@@ -120,12 +204,31 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository vari
 
 The balance checker provides automated portfolio tracking and valuation:
 
+```mermaid
+flowchart TD
+    A1["📅 Monthly cron\n5th at 07:00 BKK"] -->|SHORT_REPORT=false| C
+    A2["📤 Push to main"] -->|SHORT_REPORT=true| C
+    A3["👤 GitHub Actions UI\nmanual dispatch"] -->|SHORT_REPORT=false default| C
+    A4["🤖 Discord Bot"] -->|"SHORT_REPORT=true default\n(false if full requested)"| C
+
+    C["Fetch live wallet balances\nBitkub /api/v3/market/balances"]
+    C --> D["Fetch current prices\nBitkub TradingView API"]
+    D --> E["Fetch THB→USD rate\n(2-source fallback)"]
+    E --> F["Build CURRENT HOLDINGS\nbalance × price for each coin\nTHB + USD values"]
+    F --> G{SHORT_REPORT?}
+    G -->|true| H["Send short Discord report\nHoldings + total value only"]
+    G -->|false| I["Compute 5th-to-5th window\nstart_dt = prev month 5th 07:00 BKK\nend_dt = this month 5th 07:00 BKK"]
+    I --> J["Fetch order history\nlimit 200 per coin\nfilter: buy + within window"]
+    J --> K["Build TRADE HISTORY\nper-coin totals + individual trades\nhistorical FX rate per trade"]
+    K --> L["Send full Discord report\nHoldings + trade history"]
+```
+
 ### Features
 - **Multi-Coin Support**: Automatically fetches balances for all coins in `DCA_TARGET_MAP`
 - **Real-Time Pricing**: Gets current market prices from Bitkub API
 - **Dual Currency**: Shows values in both THB and USD
 - **Configurable Report Verbosity**: Short (balance only) or full (with trade history)
-- **Automated Reports**: Runs weekly on Sundays at noon + on every push
+- **Automated Reports**: Monthly full report on the 5th + short balance-only report on every push to main
 - **Discord Notifications**: Formatted report with individual coin balances and total portfolio value
 
 ### Report Format
