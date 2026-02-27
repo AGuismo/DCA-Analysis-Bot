@@ -441,8 +441,15 @@ def main():
             
             if not orders:
                 continue
-            
-            part2_lines.append(f"\n**{coin}** ({len(orders)} trade{'' if len(orders) == 1 else 's'})")
+
+            total_crypto = sum(o['amount_crypto'] for o in orders)
+            total_thb = sum(o['amount_thb'] for o in orders)
+            total_usd = sum(o['amount_thb'] * o['fx_rate'] for o in orders)
+
+            part2_lines.append(
+                f"\n**{coin}** ({len(orders)} trade{'' if len(orders) == 1 else 's'})"
+                f" — Crypto amount: `{total_crypto:.8f}` — Spent: ฿{total_thb:,.2f} (${total_usd:.2f})"
+            )
             
             for order in orders:
                 # Format date with timezone
