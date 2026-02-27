@@ -10,6 +10,7 @@ import json
 import os
 import time
 from typing import Optional
+from urllib.parse import urlencode
 import requests
 
 API_KEY = os.environ.get("BITKUB_API_KEY")
@@ -50,7 +51,7 @@ def bitkub_request(method: str, endpoint: str, payload: Optional[dict] = None, p
 
     # Build the path used in the HMAC signature
     if method == "GET" and params:
-        query_string = "&".join(f"{k}={v}" for k, v in params.items())
+        query_string = urlencode(params)
         sig_path = f"{endpoint}?{query_string}"
     else:
         sig_path = endpoint

@@ -420,7 +420,7 @@ def main():
                     # Create new Dictionary Entry
                     EXISTING_MAP[target_key] = {
                         "TIME": final_time,
-                        "AMOUNT": 800, # Default init
+                        "AMOUNT": 20,  # Safe minimum default — adjust amount manually before enabling
                         "BUY_ENABLED": True
                     }
                     log(f"✨ Created new config for '{target_key}' -> {final_time}")
