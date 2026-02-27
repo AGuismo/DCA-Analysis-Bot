@@ -55,8 +55,8 @@ ALLOWED_USERS = os.environ.get("DISCORD_ALLOWED_USERS", "")
 
 genai.configure(api_key=GEMINI_API_KEY)
 AI_MODEL_CANDIDATES = [
-    "gemini-2.5-flash",        # Fast and capable (preferred)
     "gemini-2.5-flash-lite",   # Optimized for speed/volume
+    "gemini-2.5-flash",        # Fast and capable (preferred)
     "gemini-2.5-pro",          # High-capability fallback
 ]
 

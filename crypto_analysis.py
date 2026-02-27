@@ -215,13 +215,13 @@ def get_ai_summary(full_report, current_symbol):
         {full_report}
         """
         
-        # Try a list of models in order of preference (Fast -> Fallback)
+        # Try a list of models in order of preference (Good -> Fallback)
         # This task needs structured extraction, not deep reasoning.
         # Avoid reasoning-first models (e.g. gemini-3-*) as they add ~60s+ per call.
         candidates = [
+            'gemini-2.5-pro',          # High-capability 
             'gemini-2.5-flash',        # Fast and capable (preferred)
             'gemini-2.5-flash-lite',   # Optimized for speed/volume
-            'gemini-2.5-pro',          # High-capability fallback
         ]
 
         result_text = None
