@@ -14,7 +14,6 @@ from bitkub_client import bitkub_request, get_thb_usd_rate, get_historical_thb_u
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 DCA_TARGET_MAP_JSON = os.environ.get("DCA_TARGET_MAP", "{}")
 SHORT_REPORT = os.environ.get("SHORT_REPORT", "true").lower() == "true"
-REPORT_DAYS_RAW = os.environ.get("REPORT_DAYS", "7.5")
 
 # Timezone Configuration
 TIMEZONE_NAME = os.environ.get("TIMEZONE", "Asia/Bangkok")
@@ -49,9 +48,14 @@ def get_order_history(symbol, limit=100):
     
     return result.get('result', [])
 
-def aggregate_buy_orders(coins, days=7.5):
-    """Fetch and aggregate all BUY orders for given coins from last N days."""
-    cutoff_time = int(time.time()) - int(days * 86400)
+def aggregate_buy_orders(coins, start_ts, end_ts):
+    """Fetch and aggregate all BUY orders for given coins within a time range.
+
+    Args:
+        coins: List of coin symbols to fetch orders for.
+        start_ts: Unix timestamp for the start of the window (inclusive).
+        end_ts: Unix timestamp for the end of the window (exclusive).
+    """
     all_orders = {}
     
     for coin in coins:
@@ -70,7 +74,7 @@ def aggregate_buy_orders(coins, days=7.5):
             if order_time > 10000000000:
                 order_time = order_time // 1000
                 
-            if order.get('side') == 'buy' and order_time >= cutoff_time:
+            if order.get('side') == 'buy' and start_ts <= order_time < end_ts:
                 # For buy orders, 'amount' is the THB amount spent
                 amount_thb = float(order.get('amount', 0))
                 rate_thb = float(order.get('rate', 0))
@@ -95,7 +99,7 @@ def aggregate_buy_orders(coins, days=7.5):
             # Sort by timestamp (newest first)
             buy_orders.sort(key=lambda x: x['timestamp'], reverse=True)
             all_orders[coin.upper()] = buy_orders
-            print(f"✓ Found {len(buy_orders)} buy orders for {coin} (last {days} days)")
+            print(f"✓ Found {len(buy_orders)} buy orders for {coin}")
     
     return all_orders
 
@@ -356,20 +360,29 @@ def main():
     # Fetch order history for all coins (only if full report)
     order_history = {}
     if not SHORT_REPORT:
-        # Calculate report window
-        if REPORT_DAYS_RAW == 'previous_month':
-            # Calculate days in the previous month
-            now = datetime.now(SELECTED_TZ)
-            first_of_this_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-            last_of_prev_month = first_of_this_month - timedelta(days=1)
-            report_days = float(last_of_prev_month.day)  # 28, 29, 30, or 31
-            report_label = last_of_prev_month.strftime('%B %Y')  # e.g., "January 2026"
-            print(f"\n📜 Fetching order history for {report_label} ({int(report_days)} days)...")
+        now = datetime.now(SELECTED_TZ)
+
+        # Compute the 5th-to-5th monthly reporting window (07:00 BKK)
+        end_dt = now.replace(day=5, hour=7, minute=0, second=0, microsecond=0)
+        if now < end_dt:
+            # Haven't reached this month's 5th yet — report the previous window
+            if end_dt.month == 1:
+                end_dt = end_dt.replace(year=end_dt.year - 1, month=12)
+            else:
+                end_dt = end_dt.replace(month=end_dt.month - 1)
+
+        # Start = 5th of the month before end, at 07:00 BKK
+        if end_dt.month == 1:
+            start_dt = end_dt.replace(year=end_dt.year - 1, month=12)
         else:
-            report_days = float(REPORT_DAYS_RAW)
-            report_label = f"Last {report_days} Days"
-            print(f"\n📜 Fetching order history (last {report_days} days)...")
-        order_history = aggregate_buy_orders(coins, days=report_days)
+            start_dt = end_dt.replace(month=end_dt.month - 1)
+
+        start_ts = int(start_dt.timestamp())
+        end_ts = int(end_dt.timestamp())
+        report_label = f"{start_dt.strftime('%b %d')} → {end_dt.strftime('%b %d, %Y')}"
+
+        print(f"\n📜 Fetching monthly order history: {report_label}")
+        order_history = aggregate_buy_orders(coins, start_ts=start_ts, end_ts=end_ts)
     
     # Build report
     report_lines = []

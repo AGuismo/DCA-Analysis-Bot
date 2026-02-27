@@ -18,14 +18,14 @@ The system consists of the following files:
 
 1. **`crypto_analysis.yml`** — Runs daily (06:00 BKK / 23:00 UTC). Analyzes **60 days** of price data across **4 periods** (14, 30, 45, 60 days) for **all pairs in `DCA_TARGET_MAP`** to find the "Champion Time" for each. Uses AI synthesis to pick optimal buy time. Updates `DCA_TARGET_MAP`.
 2. **`daily_dca.yml`** — Triggered on **push to main** or **manual dispatch**. Checks if current time matches target time for any enabled symbol. Executes market buy orders.
-3. **`portfolio_check.yml`** — Runs **on every push** and **weekly on Sundays at noon BKK**. Fetches balances for all configured coins, calculates portfolio value in THB and USD, sends Discord report.
+3. **`portfolio_check.yml`** — Runs **monthly on the 5th at 07:00 BKK** (00:00 UTC). Fetches balances for all configured coins, calculates portfolio value in THB and USD, includes the previous month's trade history (5th-to-5th window), sends Discord report. Also runs on every push to main (short balance-only report).
 
 ## Features
 
 - **Multi-Symbol Support**: Analyze and trade multiple pairs independently (e.g., BTC at 23:00, LINK at 23:45).
 - **Self-Optimizing**: Buy time adjusts daily based on 60-day historical analysis with AI-powered recommendations.
 - **Configurable Report Verbosity**: Analysis workflow supports short (AI summary only) or full (detailed breakdown) Discord reports.
-- **Portfolio Balance Tracking**: Automatic balance checking and reporting via Discord with real-time valuations in THB and USD.
+- **Portfolio Balance Tracking**: Automatic monthly balance checking and reporting via Discord with real-time valuations in THB and USD.
 - **Multi-Layer Safeguards**: Prevents double-buying with `LAST_BUY_DATE` tracking and workflow concurrency control.
 - **Detailed Logging**: All trades logged to GitHub Gist with THB and USD amounts for portfolio tracking.
 - **Portfolio Integration**: Automatic trade logging to Ghostfolio portfolio tracker with 8-decimal precision and timezone-aware timestamps.
@@ -77,13 +77,13 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository vari
 - **Rationale**: Manual dispatch gives you full control over when trades execute. Analysis updates DCA_TARGET_MAP daily, but you decide when to run the trader
 
 **Portfolio Balance Workflow (`portfolio_check.yml`)**:
-- **Schedule**: Weekly on Sundays + monthly on the 1st, both at 12:00 noon Bangkok (05:00 UTC)
+- **Schedule**: Monthly on the 5th at 07:00 Bangkok time (00:00 UTC)
 - **Trigger**: Also runs on every push to main + manual dispatch available
 - **Optimized**: Only installs minimal dependencies (requests library), uses pip caching for speed
 - **Report Mode**: Adaptive based on trigger
   - **Short Report (push)**: Current holdings and total value only - fast status check
-  - **Weekly Full Report (Sundays)**: Includes 7.5 days trade history + order details
-  - **Monthly Full Report (1st)**: Includes the entire previous month's trade history
+  - **Monthly Full Report (5th)**: Current holdings plus the exact previous month's trade history (5th 07:00 BKK → 5th 07:00 BKK)
+  - **Manual dispatch**: Triggers a full monthly report (same 5th-to-5th window)
 - **Report**: Fetches balances for all coins in DCA_TARGET_MAP, calculates portfolio value, sends Discord notification
 
 ## How It Works
@@ -149,27 +149,25 @@ LINK
 $101.89
 ```
 
-**Full Report** (weekly schedule or manual):
+**Full Report** (monthly schedule or manual):
 Includes all of the above PLUS:
 ```
 ════════════════════════════════════════
-📈 TRADE HISTORY (Last 7.5 Days)
+📈 TRADE HISTORY (Feb 05 → Mar 05, 2026)
 
-BTC (19 trades)
-• 2026-02-17 23:00 +07 - 0.00007112 BTC - Order ID: 699490ad63 - Price: ฿2,109,089.86 ($67,516.18) - Spent: ฿150.00 ($4.80)
-• 2026-02-17 13:15 +07 - 0.00002343 BTC - Order ID: 6994078ec5 - Price: ฿2,133,945.84 ($68,311.87) - Spent: ฿50.00 ($1.60)
+BTC (19 trades) — Crypto amount: 0.00446910 — Spent: ฿6,949.95 ($223.75)
+• 2026-03-04 23:00 +07 - 0.00042594 BTC - Order ID: 69a04e8a93 - Price: ฿2,112,938.03 ($68,036.60) - Spent: ฿899.99 ($28.98)
 ...
 
-LINK (10 trades)
-• 2026-02-17 23:45 +07 - 1.97330654 LINK - Order ID: 69949b388b - Price: ฿278.72 ($8.90) - Spent: ฿550.00 ($17.57)
+LINK (10 trades) — Crypto amount: 14.66775216 — Spent: ฿2,400.00 ($77.24)
+• 2026-03-04 23:45 +07 - 1.04260791 LINK - Order ID: 69a04e9aa0 - Price: ฿287.74 ($9.27) - Spent: ฿300.00 ($9.66)
 ...
 ```
 
 ### Schedule
-- **Weekly (Full Report)**: Every Sunday at 12:00 noon Bangkok time - includes 7.5 days trade history
-- **Monthly (Full Report)**: Every 1st of the month at 12:00 noon Bangkok time - includes entire previous month's trade history
+- **Monthly (Full Report)**: Every 5th of the month at 07:00 Bangkok time - includes exact 5th-to-5th trade history
 - **On Push (Short Report)**: After every commit to main branch - balance only for quick checks
-- **Manual (Configurable)**: Can be triggered via GitHub Actions UI with optional `short_report` toggle (default: full report with 7.5 days history)
+- **Manual (Short Report by default)**: Can be triggered via GitHub Actions UI or Discord bot — shows balance only unless full report is explicitly requested
 
 ## Currency Conversion
 
@@ -207,7 +205,7 @@ A self-hosted Discord bot (`discord_bot.py`) that lets you control the DCA syste
 
 ### Capabilities
 - **Trigger Analysis**: "Run analysis" (analyzes all symbols in DCA config) / "Analyze BTC" (specific symbol)
-- **Check Portfolio**: "Show balance" / "Monthly report" / "Full portfolio"
+- **Check Portfolio**: "Show balance" / "Portfolio report"
 - **View Config**: "Show status" / "What's the current config?"
 - **View Accounts**: "Show accounts" / "Portfolio account map"
 - **Update DCA Config**: "Set BTC amount to 600" / "Set BTC time to 22:00" / "Disable LINK"

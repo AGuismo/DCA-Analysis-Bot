@@ -74,8 +74,7 @@ Available actions:
    - short_report: true for AI summary only, false for full breakdown (default: true)
 
 2. "portfolio" - Check portfolio balance
-   - short_report: true for balance only, false for full with trade history (default: false)
-   - monthly_report: true for entire previous month's trade history (default: false)
+   - short_report: true for balance/holdings only (no trade history) (default: true), false for full monthly report with 5th-to-5th trade history
 
 3. "update_dca" - Update DCA configuration for a symbol
    - symbol: ALWAYS use the "COIN_THB" format — e.g. "BTC_THB", "LINK_THB", "SUI_THB".
@@ -297,21 +296,14 @@ async def handle_analyze(params: dict, message: discord.Message):
 
 async def handle_portfolio(params: dict, message: discord.Message):
     """Trigger the portfolio balance check workflow."""
-    short = params.get("short_report", False)
-    monthly = params.get("monthly_report", False)
+    short = params.get("short_report", True)
 
     inputs = {
         "short_report": "true" if short else "false",
-        "monthly_report": "true" if monthly else "false",
     }
 
     if trigger_workflow("portfolio_check.yml", inputs):
-        if monthly:
-            label = "monthly"
-        elif short:
-            label = "short"
-        else:
-            label = "full"
+        label = "short (balance only)" if short else "monthly"
         await message.reply(f"✅ Portfolio check triggered ({label} report)")
     else:
         await message.reply("❌ Failed to trigger portfolio workflow. Check bot logs.")

@@ -5,22 +5,15 @@ on:
   push:
     branches: [ "main" ]
   
-  # Run weekly on Sunday at noon Bangkok time (05:00 UTC = 12:00 Bangkok UTC+7)
-  # Run monthly on the 1st at noon Bangkok time (05:00 UTC)
+  # Run monthly on the 5th at 7am Bangkok time (00:00 UTC = 07:00 Bangkok UTC+7)
   schedule:
-    - cron: '0 5 * * 0'   # Weekly: Sunday
-    - cron: '0 5 1 * *'   # Monthly: 1st of month
+    - cron: '0 0 5 * *'   # Monthly: 5th at 07:00 BKK
   
   # Allow manual trigger
   workflow_dispatch:
     inputs:
       short_report:
         description: 'Short report (balance only, no trade history)'
-        required: false
-        type: boolean
-        default: false
-      monthly_report:
-        description: 'Monthly report (full previous month trade history)'
         required: false
         type: boolean
         default: false
@@ -56,10 +49,7 @@ jobs:
         DCA_TARGET_MAP: ${{ vars.DCA_TARGET_MAP }}
         TIMEZONE: ${{ vars.TIMEZONE || 'Asia/Bangkok' }}
         
-        # Report format: push=short (balance only), schedule/manual=full (with trade history)
+        # Report format: push=short (balance only), schedule/manual=full (with monthly trade history)
         SHORT_REPORT: ${{ github.event_name == 'push' && 'true' || (github.event_name == 'workflow_dispatch' && inputs.short_report == true && 'true' || 'false') }}
-        
-        # Trade history window: monthly cron or manual monthly toggle = previous month, otherwise 7.5 days
-        REPORT_DAYS: ${{ (github.event.schedule == '0 5 1 * *' || (github.event_name == 'workflow_dispatch' && inputs.monthly_report == true)) && 'previous_month' || '7.5' }}
         
       run: python portfolio_balance.py
