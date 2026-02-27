@@ -346,10 +346,10 @@ def execute_trade(symbol, amount_thb, map_key=None, target_map=None):
         msg = (
             f"✅ **DCA Buy Executed!**\n"
             f"🔹 **Pair:** {symbol}\n"
-            f"💰 **Spent:** {spent_thb:.2f} THB\n"
-            f"💵 **Spent (USD):** ${usd_spent:.2f}\n"
+            f"💰 **Spent:** ฿{spent_thb:,.2f}\n"
+            f"💵 **Spent (USD):** ${usd_spent:,.2f}\n"
             f"📥 **Received:** {received_amt:.8f} {base_sym}\n"
-            f"🏷️ **Rate:** {rate:,.2f} THB\n"
+            f"🏷️ **Rate:** ฿{rate:,.2f}\n"
             f"🏷️ **Rate (USD):** ${usd_price_per_unit:,.2f}\n"
             f"💾 **Portfolio:** {'✅ Saved' if ghostfolio_saved else '❌ Not saved'}\n"
             f"🕒 **Time:** {dt_str}\n"

@@ -448,7 +448,7 @@ def main():
 
             part2_lines.append(
                 f"\n**{coin}** ({len(orders)} trade{'' if len(orders) == 1 else 's'})"
-                f" — Crypto amount: `{total_crypto:.8f}` — Spent: ฿{total_thb:,.2f} (${total_usd:.2f})"
+                f" — Crypto amount: `{total_crypto:.8f}` — Spent: ฿{total_thb:,.2f} (${total_usd:,.2f})"
             )
             
             for order in orders:
