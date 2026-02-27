@@ -25,6 +25,12 @@ except ImportError:
     SELECTED_TZ = timezone(timedelta(hours=7))
 
 
+def _gha_mask(value: str) -> None:
+    """Emit a GitHub Actions masking command so the value is redacted in run logs."""
+    if os.environ.get("GITHUB_ACTIONS") == "true" and value:
+        print(f"::add-mask::{value}", flush=True)
+
+
 def get_balances():
     """Fetch wallet balances from Bitkub."""
     result = bitkub_request('POST', '/api/v3/market/balances', {})
@@ -415,7 +421,11 @@ def main():
         
         # Get current price from Bitkub
         price_thb = bitkub_prices.get(coin.upper(), 0)
-        
+
+        # Mask sensitive values before they appear in any log line
+        _gha_mask(f"{balance:.8f}")
+        _gha_mask(f"{price_thb:,.2f}")
+
         if price_thb > 0:
             print(f"✓ {coin}: ฿{price_thb:,.2f}")
         else:
@@ -424,6 +434,8 @@ def main():
         # Calculate values
         value_thb = balance * price_thb
         value_usd = value_thb * fx_rate if fx_rate > 0 else 0
+        _gha_mask(f"{value_thb:,.2f}")
+        _gha_mask(f"{value_usd:,.2f}")
         
         total_value_thb += value_thb
         total_value_usd += value_usd
@@ -446,6 +458,8 @@ def main():
     # Build Part 1: Current Portfolio
     part1_lines = ["**📊 CURRENT HOLDINGS**\n"]
     part1_lines.extend(report_lines)
+    _gha_mask(f"{total_value_thb:,.2f}")
+    _gha_mask(f"{total_value_usd:,.2f}")
     part1_lines.append(
         f"\n**💰 Total Portfolio Value**\n"
         f"฿{total_value_thb:,.2f}\n"
@@ -475,6 +489,11 @@ def main():
             )
             
             for order in orders:
+                # Mask per-order sensitive values
+                _gha_mask(str(order['order_id'])[:10])
+                _gha_mask(f"{order['amount_crypto']:.8f}")
+                _gha_mask(f"{order['amount_thb']:,.2f}")
+                _gha_mask(f"{order['rate_thb']:,.2f}")
                 # Format date with timezone
                 order_dt = datetime.fromtimestamp(order['timestamp'], tz=SELECTED_TZ)
                 date_str = order_dt.strftime('%Y-%m-%d %H:%M')
