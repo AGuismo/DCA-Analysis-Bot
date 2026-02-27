@@ -417,13 +417,11 @@ def main():
                      EXISTING_MAP[target_key] = final_time
                      log(f"✅ Updated legacy string for '{target_key}' -> {final_time}")
                 else:
-                    # Create new Dictionary Entry
-                    EXISTING_MAP[target_key] = {
-                        "TIME": final_time,
-                        "AMOUNT": 20,  # Safe minimum default — adjust amount manually before enabling
-                        "BUY_ENABLED": True
-                    }
-                    log(f"✨ Created new config for '{target_key}' -> {final_time}")
+                    # Symbol not in DCA_TARGET_MAP (new manual-dispatch analysis).
+                    # Analysis is complete and Discord report has been sent above,
+                    # but we intentionally do NOT add it to the map — the user must
+                    # add it manually via the Discord bot or GitHub Variables UI.
+                    log(f"ℹ️ '{target_key}' is not in DCA_TARGET_MAP. Recommended time: {final_time}. Add it manually to start trading.", summary_only=True)
 
 
         except Exception as e:

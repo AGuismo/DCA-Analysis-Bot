@@ -57,7 +57,8 @@ def aggregate_buy_orders(coins, start_ts, end_ts):
         end_ts: Unix timestamp for the end of the window (exclusive).
     """
     all_orders = {}
-    
+    _fx_cache: dict = {}  # date_str -> rate; avoids one HTTP call per order
+
     for coin in coins:
         # Order history uses coin_THB format (different from ticker API)
         symbol = f"{coin.upper()}_THB"
@@ -82,9 +83,11 @@ def aggregate_buy_orders(coins, start_ts, end_ts):
                 # Calculate crypto amount: THB amount / rate
                 amount_crypto = amount_thb / rate_thb if rate_thb > 0 else 0
                 
-                # Get historical USD rate for this trade date
+                # Get historical USD rate for this trade date (cached to avoid per-order HTTP calls)
                 trade_date = datetime.fromtimestamp(order_time, tz=SELECTED_TZ).strftime('%Y-%m-%d')
-                historical_fx = get_historical_thb_usd_rate(trade_date)
+                if trade_date not in _fx_cache:
+                    _fx_cache[trade_date] = get_historical_thb_usd_rate(trade_date)
+                historical_fx = _fx_cache[trade_date]
                 
                 buy_orders.append({
                     'order_id': order.get('order_id', 'N/A'),
@@ -356,7 +359,14 @@ def main():
     
     # Get FX rate
     fx_rate = get_thb_usd_rate()
-    
+    if fx_rate == 0:
+        fx_error_msg = (
+            "⚠️ **FX Rate Fetch Failed**\n"
+            "USD values in this report are unavailable.\n"
+            "All currency exchange API sources failed."
+        )
+        send_discord_notification(fx_error_msg)
+
     # Fetch order history for all coins (only if full report)
     order_history = {}
     if not SHORT_REPORT:
@@ -413,7 +423,7 @@ def main():
         
         # Calculate values
         value_thb = balance * price_thb
-        value_usd = value_thb * fx_rate
+        value_usd = value_thb * fx_rate if fx_rate > 0 else 0
         
         total_value_thb += value_thb
         total_value_usd += value_usd

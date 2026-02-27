@@ -357,16 +357,20 @@ def execute_trade(symbol, amount_thb, map_key=None, target_map=None):
         )
         send_discord_alert(msg, is_error=False)
 
-        # 8. Update LAST_BUY_DATE in DCA_TARGET_MAP
-        if map_key and target_map:
-            today_str = datetime.now(SELECTED_TZ).strftime("%Y-%m-%d")
-            print(f"🔄 Updating LAST_BUY_DATE for {map_key} to {today_str}...")
-            save_last_buy_date(target_map, map_key, today_str)
-
     except Exception as e:
         err = f"❌ **DCA Failed ({symbol})**: {str(e)}"
         print(err)
         send_discord_alert(err, is_error=True)
+        # Fall through — LAST_BUY_DATE is still saved below to prevent
+        # the bot from hammering a broken API/insufficient funds every 15 min.
+
+    # 8. Update LAST_BUY_DATE in DCA_TARGET_MAP (always — success or failure)
+    # CRITICAL: Outside try/except so RuntimeError from save_last_buy_date propagates
+    # and the workflow fails loudly instead of silently swallowing the double-buy risk.
+    if map_key and target_map:
+        today_str = datetime.now(SELECTED_TZ).strftime("%Y-%m-%d")
+        print(f"🔄 Updating LAST_BUY_DATE for {map_key} to {today_str}...")
+        save_last_buy_date(target_map, map_key, today_str)
 
 def main():
     print(f"--- Starting DCA Logic ---")
