@@ -27,6 +27,13 @@ DCA_TARGET_MAP_JSON = os.environ.get("DCA_TARGET_MAP", "{}")
 
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 
+
+def _gha_mask(value: str) -> None:
+    """Emit a GitHub Actions masking command so the value is redacted in run logs."""
+    if os.environ.get("GITHUB_ACTIONS") == "true" and value:
+        print(f"::add-mask::{value}", flush=True)
+
+
 def send_discord_alert(message, is_error=False):
     if not DISCORD_WEBHOOK_URL:
         # print(f"[Discord Mock] {message}")
@@ -245,6 +252,10 @@ def save_last_buy_date(target_map, symbol_key, date_str):
     raise RuntimeError(f"Failed to update LAST_BUY_DATE after {max_retries} attempts: {last_error}")
 
 def execute_trade(symbol, amount_thb, map_key=None, target_map=None):
+    # Mask the configured DCA amount so subsequent log lines are redacted in GitHub Actions
+    _gha_mask(str(amount_thb))
+    if float(amount_thb) == int(float(amount_thb)):
+        _gha_mask(str(int(float(amount_thb))))
     print(f"🚀 Executing DCA Buy for {symbol} ({amount_thb} THB)...")
     
     try:
@@ -262,6 +273,7 @@ def execute_trade(symbol, amount_thb, map_key=None, target_map=None):
             raise Exception(f"API Error Code: {result.get('error')}")
 
         order_id = result.get('result', {}).get('id')
+        _gha_mask(str(order_id))
         print(f"   Placed Order ID: {order_id}. Waiting for match...")
         
         # 2. Wait
@@ -281,6 +293,10 @@ def execute_trade(symbol, amount_thb, map_key=None, target_map=None):
         
         rate = (spent_thb / received_amt) if received_amt > 0 else 0
         ts_exec = int(order_data.get('ts', time.time()))
+        # Mask all sensitive trade values so they are redacted in GitHub Actions run logs
+        _gha_mask(f"{spent_thb:.2f}")
+        _gha_mask(f"{received_amt:.8f}")
+        _gha_mask(f"{rate:.2f}")
         dt_str = datetime.fromtimestamp(ts_exec, tz=SELECTED_TZ).strftime('%Y-%m-%d %H:%M:%S')
 
         # 4. Calculate USD value
@@ -298,6 +314,8 @@ def execute_trade(symbol, amount_thb, map_key=None, target_map=None):
         
         usd_spent = spent_thb * fx_rate if fx_rate > 0 else 0
         usd_price_per_unit = (usd_spent / received_amt) if received_amt > 0 else 0
+        _gha_mask(f"{usd_spent:.2f}")
+        _gha_mask(f"{usd_price_per_unit:.2f}")
 
         # 5. Log to Ghostfolio
         ghostfolio_saved = False

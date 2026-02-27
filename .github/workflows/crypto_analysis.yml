@@ -15,8 +15,6 @@ on:
         required: false
         type: boolean
         default: true
-  push:
-    branches: [ "main" ]
 
 # Prevent race conditions: Only one analysis can run at a time
 concurrency:
@@ -60,6 +58,18 @@ jobs:
       if: success() && steps.analysis.outputs.best_time_map != ''
       env:
         GH_TOKEN: ${{ secrets.GH_PAT_FOR_VARS }} # Needs a Personal Access Token with repo scope
+        BEST_TIME_MAP: ${{ steps.analysis.outputs.best_time_map }}
       run: |
-        echo "Updating DCA_TARGET_MAP to ${{ steps.analysis.outputs.best_time_map }}..."
-        gh variable set DCA_TARGET_MAP --body '${{ steps.analysis.outputs.best_time_map }}'
+        echo "Fetching live DCA_TARGET_MAP to safely merge TIME updates..."
+        CURRENT_MAP=$(gh variable get DCA_TARGET_MAP 2>/dev/null || echo "")
+        if [ -z "$CURRENT_MAP" ]; then
+          echo "⚠️ Could not fetch live map. Writing analysis output directly."
+          gh variable set DCA_TARGET_MAP --body "$BEST_TIME_MAP"
+        else
+          export CURRENT_MAP
+          # $'...' ANSI-C quoting turns \n into real newlines, keeping everything on one
+          # line so the YAML literal block indentation is never broken.
+          MERGED=$(python3 -c $'import json,os\nm=json.loads(os.environ["CURRENT_MAP"])\nu=json.loads(os.environ["BEST_TIME_MAP"])\nfor k,v in u.items():\n if k in m and isinstance(m[k],dict) and isinstance(v,dict) and "TIME" in v:\n  m[k]["TIME"]=v["TIME"]\nprint(json.dumps(m,separators=(",",":")))')
+          echo "Updating DCA_TARGET_MAP with merged TIME values (LAST_BUY_DATE preserved)..."
+          gh variable set DCA_TARGET_MAP --body "$MERGED"
+        fi

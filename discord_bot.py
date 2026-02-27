@@ -553,6 +553,15 @@ async def on_message(message: discord.Message):
 
     handler = ACTION_HANDLERS.get(action)
     if handler:
+        # Block write actions when no user allowlist is configured (and this isn't a DM).
+        # Users with DISCORD_ALLOWED_USERS set are unaffected — this branch is never reached.
+        _WRITE_ACTIONS = {"analyze", "portfolio", "update_dca"}
+        if not ALLOWED_USERS and not is_dm and action in _WRITE_ACTIONS:
+            await message.reply(
+                "⚠️ Action commands require `DISCORD_ALLOWED_USERS` to be configured. "
+                "Contact the bot owner to set up access control."
+            )
+            return
         await handler(params, message)
     elif action == "unknown":
         reply = intent.get("reply", "")

@@ -2,8 +2,6 @@ name: Daily Crypto DCA
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ "main" ]
 
 # Prevent race conditions: Only one instance can run at a time
 concurrency:

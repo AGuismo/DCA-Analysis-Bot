@@ -17,7 +17,7 @@ The system consists of the following files:
 **Workflows** (`.github/workflows/`):
 
 1. **`crypto_analysis.yml`** — Runs daily (06:00 BKK / 23:00 UTC). Analyzes **60 days** of price data across **4 periods** (14, 30, 45, 60 days) for **all pairs in `DCA_TARGET_MAP`** to find the "Champion Time" for each. Uses AI synthesis to pick optimal buy time. Updates `DCA_TARGET_MAP`.
-2. **`daily_dca.yml`** — Triggered on **push to main** or **manual dispatch**. Checks if current time matches target time for any enabled symbol. Executes market buy orders.
+2. **`daily_dca.yml`** — Triggered on **manual dispatch** only. Checks if current time matches target time for any enabled symbol. Executes market buy orders.
 3. **`portfolio_check.yml`** — Runs **monthly on the 5th at 07:00 BKK** (00:00 UTC). Fetches balances for all configured coins, calculates portfolio value in THB and USD, includes the previous month's trade history (5th-to-5th window), sends Discord report. Also runs on every push to main (short balance-only report).
 
 ## System Orchestration
@@ -54,7 +54,6 @@ flowchart LR
     W1 --> O2
 
     T4 -->|"dispatch API"| W2
-    T3 --> W2
     T5 --> W2
     W2 --> O3
     W2 --> O4
@@ -108,7 +107,7 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository vari
 
 **Analysis Workflow (`crypto_analysis.yml`)**:
 - **Schedule**: Daily at 23:00 UTC (06:00 Bangkok)
-- **Trigger**: Manual dispatch or push to main
+- **Trigger**: Daily schedule or manual dispatch
 - **Concurrency**: Only one analysis runs at a time (cancel-in-progress)
 - **Environment**: Uses `binanceus` exchange to avoid geo-restrictions
 - **Symbol Resolution**: Automatically derives symbols from `DCA_TARGET_MAP` keys (e.g., `BTC_THB` → `BTC/USDT`). Override with explicit `symbol` input on manual dispatch.
