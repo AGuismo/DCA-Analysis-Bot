@@ -57,7 +57,7 @@ genai.configure(api_key=GEMINI_API_KEY)
 AI_MODEL_CANDIDATES = [
     "gemini-2.5-flash-lite",   # Optimized for speed/volume
     "gemini-2.5-flash",        # Fast and capable (preferred)
-    "gemini-2.5-pro",          # High-capability fallback
+    "gemini-3-flash-preview",  # Frontier-class fallback
 ]
 
 CLASSIFY_PROMPT = """You are a command classifier for a cryptocurrency DCA automation system.

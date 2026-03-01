@@ -222,6 +222,7 @@ def get_ai_summary(full_report, current_symbol):
             'gemini-2.5-pro',          # High-capability 
             'gemini-2.5-flash',        # Fast and capable (preferred)
             'gemini-2.5-flash-lite',   # Optimized for speed/volume
+            'gemini-3-flash-preview',  # Frontier-class fallback
         ]
 
         result_text = None
