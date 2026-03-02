@@ -384,23 +384,15 @@ def main():
             log(f"\n🎯 FINAL DECISION for {symbol}: {final_time}", summary_only=True)
             log(f"ℹ️ SOURCE: {source_method}", summary_only=True)
             
-            # Determine what to send to Discord
-            if SHORT_REPORT:
-                full_report = "\n".join(summary_lines)
-            else:
-                full_report = "\n".join(report_lines)
-
-            # Send individual report per symbol
-            send_to_discord(full_report)
-
-            # Map symbol to final time (BTC/USDT -> BTC_THB key in EXISTING_MAP)
+            # Update EXISTING_MAP with the final time BEFORE building the Discord report
+            # so the appended DCA_TARGET_MAP snapshot reflects the new recommended times.
             if final_time:
                 # Normalize to THB key if possible (e.g., BTC/USDT -> BTC_THB)
                 base = symbol.split('/')[0]
                 thb_key = f"{base}_THB"
-                
+
                 # Determine which key to update
-                target_key = symbol # Default
+                target_key = symbol  # Default
                 if thb_key in EXISTING_MAP:
                     target_key = thb_key
                 elif symbol in EXISTING_MAP:
@@ -414,15 +406,29 @@ def main():
                     EXISTING_MAP[target_key]["TIME"] = final_time
                     log(f"✅ Updated existing config for '{target_key}' -> TIME: {final_time}")
                 elif target_key in EXISTING_MAP:
-                     # It's a string (legacy format)
-                     EXISTING_MAP[target_key] = final_time
-                     log(f"✅ Updated legacy string for '{target_key}' -> {final_time}")
+                    # It's a string (legacy format)
+                    EXISTING_MAP[target_key] = final_time
+                    log(f"✅ Updated legacy string for '{target_key}' -> {final_time}")
                 else:
                     # Symbol not in DCA_TARGET_MAP (new manual-dispatch analysis).
-                    # Analysis is complete and Discord report has been sent above,
+                    # Analysis is complete and Discord report has been sent below,
                     # but we intentionally do NOT add it to the map — the user must
                     # add it manually via the Discord bot or GitHub Variables UI.
                     log(f"ℹ️ '{target_key}' is not in DCA_TARGET_MAP. Recommended time: {final_time}. Add it manually to start trading.", summary_only=True)
+
+            # Determine what to send to Discord
+            if SHORT_REPORT:
+                full_report = "\n".join(summary_lines)
+            else:
+                full_report = "\n".join(report_lines)
+
+            # Append current DCA_TARGET_MAP for visibility (now reflects the updated TIME)
+            if EXISTING_MAP:
+                map_str = json.dumps(EXISTING_MAP, indent=2)
+                full_report += f"\n\n**📋 DCA_TARGET_MAP:**\n```json\n{map_str}\n```"
+
+            # Send individual report per symbol
+            send_to_discord(full_report)
 
 
         except Exception as e:
