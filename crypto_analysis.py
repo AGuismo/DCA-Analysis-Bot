@@ -422,11 +422,6 @@ def main():
             else:
                 full_report = "\n".join(report_lines)
 
-            # Append current DCA_TARGET_MAP for visibility (now reflects the updated TIME)
-            if EXISTING_MAP:
-                map_str = json.dumps(EXISTING_MAP, indent=2)
-                full_report += f"\n\n**📋 DCA_TARGET_MAP:**\n```json\n{map_str}\n```"
-
             # Send individual report per symbol
             send_to_discord(full_report)
 
@@ -435,6 +430,11 @@ def main():
              error_msg = f"CRITICAL FAILURE processing {symbol}: {e}"
              print(error_msg)
              send_to_discord(f"❌ Analysis Failed for {symbol}: {e}")
+
+    # Send final DCA_TARGET_MAP snapshot (reflects all TIME updates from this run)
+    if EXISTING_MAP:
+        map_str = json.dumps(EXISTING_MAP, indent=2)
+        send_to_discord(f"**📋 DCA_TARGET_MAP (updated):**\n```json\n{map_str}\n```")
 
     # Export the merged map for GitHub Actions
     if EXISTING_MAP:
