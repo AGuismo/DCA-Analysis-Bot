@@ -140,6 +140,249 @@ def get_bitkub_prices(coin_list):
     print(f"✅ Fetched Bitkub prices for {len(prices)} coins")
     return prices
 
+
+def fetch_daily_ohlcv(symbol, from_ts, to_ts):
+    """Fetch daily OHLCV candles from Bitkub TradingView API.
+
+    Returns a dict mapping date strings (YYYY-MM-DD in SELECTED_TZ) to candle
+    dicts with keys: open, high, low, close.
+    """
+    url = (
+        f"https://api.bitkub.com/tradingview/history"
+        f"?symbol={symbol}&resolution=D&from={from_ts}&to={to_ts}"
+    )
+    try:
+        r = requests.get(url, timeout=10)
+        if r.status_code != 200:
+            print(f"⚠️ TradingView API returned {r.status_code} for {symbol}")
+            return {}
+
+        data = r.json()
+        if data.get('s') != 'ok':
+            print(f"⚠️ TradingView API status not OK for {symbol}: {data.get('s')}")
+            return {}
+
+        timestamps = data.get('t', [])
+        required_keys = ('o', 'h', 'l', 'c')
+        if not all(k in data for k in required_keys):
+            print(f"⚠️ TradingView daily response missing OHLC keys for {symbol}")
+            return {}
+
+        candles = {}
+        for i in range(len(timestamps)):
+            dt = datetime.fromtimestamp(timestamps[i], tz=SELECTED_TZ)
+            date_str = dt.strftime('%Y-%m-%d')
+            candles[date_str] = {
+                'open': float(data['o'][i]),
+                'high': float(data['h'][i]),
+                'low': float(data['l'][i]),
+                'close': float(data['c'][i]),
+            }
+        return candles
+    except Exception as e:
+        print(f"⚠️ Failed to fetch daily candles for {symbol}: {e}")
+        return {}
+
+
+def _median(values):
+    """Return the median of a list of numbers (no numpy/pandas dependency)."""
+    if not values:
+        return 0.0
+    s = sorted(values)
+    n = len(s)
+    if n % 2 == 1:
+        return s[n // 2]
+    return (s[n // 2 - 1] + s[n // 2]) / 2
+
+
+def analyze_dca_performance(order_history, start_ts, end_ts):
+    """Compare actual DCA buy prices against daily OHLCV for timing analysis.
+
+    For every trade in *order_history*, fetches the daily candle from Bitkub and
+    computes:
+      - miss_pct: how far above the daily low the buy was (%).
+      - vs_avg_pct: how far above/below the daily OHLC average (%).
+      - range_pos: position within the day's high-low range (0 %% = low, 100 %% = high).
+      - timing_cost_thb: extra THB spent compared with buying at the daily low.
+
+    Returns a dict  {coin: [trade_stat, ...]}  or None when no data is available.
+    """
+    if not order_history:
+        return None
+
+    analysis = {}
+
+    for coin, orders in order_history.items():
+        symbol = f"{coin}_THB"
+        # Fetch daily candles covering the full reporting window (with 1-day buffer)
+        candles = fetch_daily_ohlcv(symbol, start_ts - 86400, end_ts + 86400)
+
+        if not candles:
+            print(f"⚠️ No candle data for {coin}, skipping DCA analysis")
+            continue
+
+        trade_stats = []
+        for order in orders:
+            trade_date = datetime.fromtimestamp(
+                order['timestamp'], tz=SELECTED_TZ
+            ).strftime('%Y-%m-%d')
+            candle = candles.get(trade_date)
+
+            if not candle or candle['low'] <= 0:
+                continue
+
+            day_low = candle['low']
+            day_high = candle['high']
+            day_range = day_high - day_low
+            day_avg = (candle['open'] + day_high + day_low + candle['close']) / 4
+            rate = order['rate_thb']
+
+            miss_pct = (rate - day_low) / day_low * 100
+            vs_avg_pct = (rate - day_avg) / day_avg * 100
+            range_pos = ((rate - day_low) / day_range * 100) if day_range > 0 else 50.0
+            timing_cost_thb = order['amount_crypto'] * (rate - day_low)
+
+            trade_stats.append({
+                'date': trade_date,
+                'rate_thb': rate,
+                'amount_thb': order['amount_thb'],
+                'amount_crypto': order['amount_crypto'],
+                'day_low': day_low,
+                'day_high': day_high,
+                'day_avg': day_avg,
+                'miss_pct': miss_pct,
+                'vs_avg_pct': vs_avg_pct,
+                'range_pos': range_pos,
+                'timing_cost_thb': timing_cost_thb,
+                'fx_rate': order['fx_rate'],
+            })
+
+        if trade_stats:
+            analysis[coin] = trade_stats
+
+    return analysis if analysis else None
+
+
+def format_dca_analysis(analysis, report_label, fx_rate):
+    """Build Discord-ready report lines for the DCA timing analysis."""
+    lines = []
+    lines.append(f"**🎯 DCA TIMING ANALYSIS ({report_label})**")
+    lines.append(
+        "_How well did your buy timing perform vs each day's price action?_\n"
+    )
+
+    all_miss = []
+    all_vs_avg = []
+    total_timing_cost_thb = 0.0
+    total_timing_cost_usd = 0.0
+    total_spent_thb = 0.0
+    total_spent_usd = 0.0
+
+    for coin in sorted(analysis.keys()):
+        trades = analysis[coin]
+
+        miss_values = [t['miss_pct'] for t in trades]
+        vs_avg_values = [t['vs_avg_pct'] for t in trades]
+        range_positions = [t['range_pos'] for t in trades]
+
+        median_miss = _median(miss_values)
+        median_vs_avg = _median(vs_avg_values)
+        mean_range_pos = sum(range_positions) / len(range_positions)
+        coin_timing_cost = sum(t['timing_cost_thb'] for t in trades)
+        coin_total_spent = sum(t['amount_thb'] for t in trades)
+        coin_timing_cost_usd = sum(
+            t['timing_cost_thb'] * t['fx_rate'] for t in trades
+        )
+        coin_spent_usd = sum(t['amount_thb'] * t['fx_rate'] for t in trades)
+
+        # Best / worst trades by miss %
+        best = min(trades, key=lambda t: t['miss_pct'])
+        worst = max(trades, key=lambda t: t['miss_pct'])
+
+        # Snipe rate: buy was within 0.5 % of the daily low
+        snipes = sum(1 for t in trades if t['miss_pct'] < 0.5)
+        snipe_rate = snipes / len(trades) * 100
+
+        # Beat daily OHLC average
+        beats_avg = sum(1 for t in trades if t['vs_avg_pct'] < 0)
+        beats_avg_rate = beats_avg / len(trades) * 100
+
+        # GHA mask sensitive totals
+        _gha_mask(f"{coin_timing_cost:,.2f}")
+        _gha_mask(f"{coin_timing_cost_usd:,.2f}")
+        _gha_mask(f"{coin_total_spent:,.2f}")
+
+        lines.append(
+            f"**{coin}** ({len(trades)} trade{'s' if len(trades) != 1 else ''} analyzed)"
+        )
+        lines.append(f"  Median Miss from Daily Low: **{median_miss:.2f}%**")
+        lines.append(
+            f"  Avg Range Position: **{mean_range_pos:.0f}%** _(0%=low, 100%=high)_"
+        )
+        lines.append(
+            f"  Snipe Rate (<0.5% miss): **{snipe_rate:.0f}%** ({snipes}/{len(trades)})"
+        )
+        lines.append(
+            f"  Beat Daily Avg: **{beats_avg_rate:.0f}%** ({beats_avg}/{len(trades)})"
+        )
+
+        vs_avg_marker = " 🟢" if median_vs_avg < 0 else ""
+        lines.append(
+            f"  Median vs Daily Avg: **{median_vs_avg:+.2f}%**{vs_avg_marker}"
+        )
+
+        best_dt = datetime.strptime(best['date'], '%Y-%m-%d').strftime('%b %d')
+        worst_dt = datetime.strptime(worst['date'], '%Y-%m-%d').strftime('%b %d')
+        lines.append(f"  Best:  {best_dt} — {best['miss_pct']:.2f}% from low ✨")
+        lines.append(f"  Worst: {worst_dt} — {worst['miss_pct']:.2f}% from low")
+
+        lines.append(
+            f"  Timing Cost: ฿{coin_timing_cost:,.2f}"
+            f" (${coin_timing_cost_usd:,.2f})"
+            f" of ฿{coin_total_spent:,.2f} (${coin_spent_usd:,.2f}) total spent"
+        )
+        lines.append("")
+
+        all_miss.extend(miss_values)
+        all_vs_avg.extend(vs_avg_values)
+        total_timing_cost_thb += coin_timing_cost
+        total_timing_cost_usd += coin_timing_cost_usd
+        total_spent_thb += coin_total_spent
+        total_spent_usd += coin_spent_usd
+
+    # --- Overall summary ---
+    if all_miss:
+        overall_median_miss = _median(all_miss)
+        overall_median_vs_avg = _median(all_vs_avg)
+        efficiency = (
+            100 - (total_timing_cost_thb / total_spent_thb * 100)
+            if total_spent_thb > 0
+            else 100
+        )
+
+        _gha_mask(f"{total_timing_cost_thb:,.2f}")
+        _gha_mask(f"{total_timing_cost_usd:,.2f}")
+        _gha_mask(f"{total_spent_thb:,.2f}")
+        _gha_mask(f"{total_spent_usd:,.2f}")
+
+        lines.append("**💡 OVERALL**")
+        lines.append(
+            f"  Portfolio Median Miss: **{overall_median_miss:.2f}%**"
+        )
+        lines.append(
+            f"  Portfolio Median vs Avg: **{overall_median_vs_avg:+.2f}%**"
+        )
+        lines.append(
+            f"  Total Timing Cost: ฿{total_timing_cost_thb:,.2f}"
+            f" (${total_timing_cost_usd:,.2f})"
+            f" of ฿{total_spent_thb:,.2f} (${total_spent_usd:,.2f}) total spent"
+            f" _(historical FX rates)_"
+        )
+        lines.append(f"  Timing Efficiency: **{efficiency:.2f}%**")
+
+    return lines
+
+
 def send_discord_notification(message):
     """Send Discord webhook notification, splitting intelligently if needed."""
     if not DISCORD_WEBHOOK_URL:
@@ -520,11 +763,31 @@ def main():
         part2_lines.append(f"\n**📈 TRADE HISTORY ({report_label})**\n")
         part2_lines.append(f"\n_No trades in this period_")
     
-    # Combine both parts
+    # Combine Parts 1 + 2 into the main message (preserves existing split logic)
     message = "\n".join(part1_lines + part2_lines)
-    
+
     print("\n" + message)
     send_discord_notification(message)
+
+    # Part 3: DCA Timing Analysis — sent as a separate message to avoid
+    # confusing the existing ═══ separator-based split logic in send_discord_notification
+    if not SHORT_REPORT and order_history:
+        try:
+            print("\n📊 Running DCA timing analysis...")
+            dca_analysis = analyze_dca_performance(
+                order_history, start_ts, end_ts
+            )
+            if dca_analysis:
+                part3_lines = format_dca_analysis(
+                    dca_analysis, report_label, fx_rate
+                )
+                send_discord_notification("\n".join(part3_lines))
+            else:
+                print("⚠️ No candle data matched trades — skipping timing analysis")
+        except Exception as e:
+            print(f"⚠️ DCA timing analysis failed: {e}")
+            send_discord_notification(f"⚠️ _DCA timing analysis unavailable: {e}_")
+
     print("\n✅ Portfolio balance check complete")
 
 if __name__ == "__main__":
