@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Python 3.9 cryptocurrency DCA (Dollar-Cost Averaging) automation system running on GitHub Actions with a self-hosted Discord bot. It analyzes markets via CCXT + Gemini AI, executes trades on the Bitkub exchange, and logs to Ghostfolio + GitHub Gist.
+Python 3.12 cryptocurrency DCA (Dollar-Cost Averaging) automation system running on GitHub Actions with a self-hosted Discord bot. It analyzes markets via CCXT + Gemini AI, executes trades on the Bitkub exchange, and logs to Ghostfolio + GitHub Gist.
 
 ## Architecture
 
@@ -74,7 +74,7 @@ docker compose logs -f
 
 ## Python Conventions
 
-- **Target Python 3.9** — use `Optional[X]` not `X | None`, no 3.10+ syntax
+- **Target Python 3.12** — use `X | None` not `Optional[X]`, prefer modern syntax
 - **f-strings only** — no `%` or `.format()`
 - **PEP 8**: snake_case for functions/variables, UPPER_CASE for module constants
 - **Imports**: stdlib → third-party → local modules. Import shared utilities from `bitkub_client` — never re-implement `bitkub_request`, `get_thb_usd_rate`, or `get_historical_thb_usd_rate`

@@ -9,7 +9,6 @@ import hmac
 import json
 import os
 import time
-from typing import Optional
 from urllib.parse import urlencode
 import requests
 
@@ -35,7 +34,7 @@ def get_server_time() -> int:
 # Authenticated request
 # ---------------------------------------------------------------------------
 
-def bitkub_request(method: str, endpoint: str, payload: Optional[dict] = None, params: Optional[dict] = None):
+def bitkub_request(method: str, endpoint: str, payload: dict | None = None, params: dict | None = None):
     """
     Make an authenticated request to the Bitkub API.
 

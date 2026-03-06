@@ -28,7 +28,6 @@ import json
 import os
 import re
 import sys
-from typing import Optional
 
 import discord
 import requests
@@ -170,7 +169,7 @@ GH_HEADERS = {
 GH_API = "https://api.github.com"
 
 
-def trigger_workflow(workflow_file: str, inputs: Optional[dict] = None) -> bool:
+def trigger_workflow(workflow_file: str, inputs: dict | None = None) -> bool:
     """Trigger a GitHub Actions workflow via the dispatch API. Returns True on success."""
     url = f"{GH_API}/repos/{GITHUB_REPO}/actions/workflows/{workflow_file}/dispatches"
     body = {"ref": "main"}
@@ -184,7 +183,7 @@ def trigger_workflow(workflow_file: str, inputs: Optional[dict] = None) -> bool:
         return False
 
 
-def get_repo_variable(name: str) -> Optional[str]:
+def get_repo_variable(name: str) -> str | None:
     """Fetch a GitHub Actions repository variable value."""
     url = f"{GH_API}/repos/{GITHUB_REPO}/actions/variables/{name}"
     try:

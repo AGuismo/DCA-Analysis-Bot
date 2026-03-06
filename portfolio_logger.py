@@ -19,13 +19,8 @@ SYMBOL_DATASOURCE_OVERRIDES = {
 
 # Timezone Configuration
 TIMEZONE_NAME = os.environ.get("TIMEZONE", "Asia/Bangkok")
-try:
-    from zoneinfo import ZoneInfo
-    SELECTED_TZ = ZoneInfo(TIMEZONE_NAME)
-except ImportError:
-    # Fallback for Python < 3.9 or missing tzdata
-    SELECTED_TZ = dt_timezone(timedelta(hours=7))
-    print(f"⚠️ zoneinfo not available. Using UTC+7 offset as fallback for {TIMEZONE_NAME}")
+from zoneinfo import ZoneInfo
+SELECTED_TZ = ZoneInfo(TIMEZONE_NAME)
 
 def get_account_id(symbol, portfolio_map):
     """

@@ -11,7 +11,7 @@
 
 ## Project Overview
 
-This is a **Python 3.9** cryptocurrency DCA (Dollar-Cost Averaging) automation system running on **GitHub Actions**. It consists of:
+This is a **Python 3.12** cryptocurrency DCA (Dollar-Cost Averaging) automation system running on **GitHub Actions**. It consists of:
 
 | File | Role |
 |------|------|
@@ -31,8 +31,8 @@ The Discord bot runs separately and uses its own env vars (`DISCORD_BOT_TOKEN`, 
 ## Python Style & Quality Standards
 
 ### Language & Compatibility
-- Target **Python 3.9** — this is what all GitHub Actions workflows use (`python-version: '3.9'`).
-- Use `Optional[X]` from `typing` for optional types — **not** `X | None` (that requires Python 3.10+).
+- Target **Python 3.12** — this is what all GitHub Actions workflows use (`python-version: '3.12'`).
+- Use `X | None` for optional types (PEP 604). No need to import `Optional` from `typing`.
 - Use f-strings for all string formatting. Do not use `%` or `.format()`.
 - Follow **PEP 8**: snake_case for files, functions, and variables; UPPER_CASE for module-level constants.
 
@@ -157,7 +157,7 @@ from bitkub_client import bitkub_request, get_thb_usd_rate
 - **SHORT_REPORT expression**: Use ternary-like YAML expressions and always default to the safer/shorter mode on automated triggers.
 
 ### Adding a new workflow
-1. Use `python-version: '3.9'` on the setup-python step.
+1. Use `python-version: '3.12'` on the setup-python step.
 2. Pass all required secrets via `env:` on the run step — not globally.
 3. Install dependencies before running Python.
 4. Add a concurrency group to prevent parallel runs.

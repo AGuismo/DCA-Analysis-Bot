@@ -9,13 +9,8 @@ from bitkub_client import bitkub_request, get_thb_usd_rate
 # --- Configuration ---
 # Timezone Configuration
 TIMEZONE_NAME = os.environ.get("TIMEZONE", "Asia/Bangkok")
-try:
-    from zoneinfo import ZoneInfo
-    SELECTED_TZ = ZoneInfo(TIMEZONE_NAME)
-except ImportError:
-    from datetime import timezone
-    SELECTED_TZ = timezone(timedelta(hours=7))
-    print(f"⚠️ zoneinfo not available. Using UTC+7 offset as fallback for {TIMEZONE_NAME}")
+from zoneinfo import ZoneInfo
+SELECTED_TZ = ZoneInfo(TIMEZONE_NAME)
 
 # Default settings (fallback)
 DEFAULT_DCA_AMOUNT = 20.0
