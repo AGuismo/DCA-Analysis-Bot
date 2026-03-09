@@ -222,6 +222,14 @@ def update_repo_variable(name: str, value: str) -> bool:
 # Maps "HH:MM" → {"symbols": {"BTC_THB": "2025-03-09", ...}} where value is LAST_BUY_DATE
 _dca_schedule: dict[str, dict] = {}
 
+# Total minutes in a day
+_DAY = 24 * 60
+
+
+def _wrap_diff(a_min: int, b_min: int) -> int:
+    """Shortest signed distance from b to a on a 24h clock (range -720 to +719)."""
+    return (a_min - b_min + _DAY // 2) % _DAY - _DAY // 2
+
 
 def refresh_dca_schedule(raw_json: str | None) -> None:
     """Parse DCA_TARGET_MAP and update the scheduler's target times."""
@@ -278,19 +286,23 @@ def _format_cron_status() -> str:
         symbols_dict = info["symbols"]
         all_bought = all(lbd == today for lbd in symbols_dict.values())
 
-        # Compute all aligned dispatch times in the ±30 min window
-        dispatch_times: list[str] = []
+        # Compute all aligned dispatch times in the ±30 min window, sorted by offset from target
+        slots: list[tuple[int, int]] = []  # (diff, slot_min)
         for quarter in range(0, 24 * 4):
             slot_min = quarter * 15
-            diff = slot_min - target_min
+            diff = _wrap_diff(slot_min, target_min)
             if -30 <= diff <= 30:
-                hh, mm = divmod(slot_min, 60)
-                tag = f"{hh:02d}:{mm:02d}"
-                # Strikethrough past slots or all slots if bought
-                slot_passed = current_min - slot_min >= 0
-                if all_bought or slot_passed:
-                    tag = f"~~{tag}~~"
-                dispatch_times.append(tag)
+                slots.append((diff, slot_min))
+        slots.sort()
+
+        dispatch_times: list[str] = []
+        for diff, slot_min in slots:
+            hh, mm = divmod(slot_min, 60)
+            tag = f"{hh:02d}:{mm:02d}"
+            slot_passed = _wrap_diff(current_min, slot_min) >= 0
+            if all_bought or slot_passed:
+                tag = f"~~{tag}~~"
+            dispatch_times.append(tag)
 
         symbol_names = ", ".join(symbols_dict.keys())
         done = " ✅" if all_bought else ""
@@ -636,7 +648,7 @@ async def dca_scheduler_tick():
         # Check if current clock quarter is within ±30 min of target
         h, m = map(int, time_str.split(":"))
         target_min = h * 60 + m
-        diff = current_min - target_min
+        diff = _wrap_diff(current_min, target_min)
 
         if -30 <= diff <= 30:
             should_dispatch = True
