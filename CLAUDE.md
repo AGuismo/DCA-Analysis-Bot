@@ -23,7 +23,7 @@ bitkub_client.py  ← shared foundation (HMAC auth, FX rates, server time)
 
 crypto_analysis.py  ← standalone analysis (uses ccxt + pandas + Gemini AI, no bitkub_client)
 portfolio_logger.py ← Ghostfolio logger (standalone, uses requests only)
-discord_bot.py      ← Discord bot (standalone, triggers GitHub Actions via API)
+discord_bot.py      ← Discord bot + DCA scheduler (standalone, triggers GitHub Actions via API)
 ```
 
 ### Data Flow
@@ -31,7 +31,7 @@ discord_bot.py      ← Discord bot (standalone, triggers GitHub Actions via API
 - `DCA_TARGET_MAP` (GitHub repo variable) is the central config: `{"BTC_THB": {"TIME": "23:00", "AMOUNT": 800, "BUY_ENABLED": true, "LAST_BUY_DATE": ""}}`
 - `crypto_analysis.py` updates `TIME` fields via GitHub Actions output → workflow merge step
 - `crypto_dca.py` reads the map, executes trades, then updates `LAST_BUY_DATE` via GitHub API with 3-retry logic
-- `discord_bot.py` reads/writes `DCA_TARGET_MAP` directly via GitHub API
+- `discord_bot.py` reads/writes `DCA_TARGET_MAP` directly via GitHub API; when `DCA_CRON_ENABLED=true`, also schedules `daily_dca.yml` dispatches within ±30 min of each target TIME (15 min ticks)
 
 ### Key Patterns
 

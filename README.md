@@ -28,7 +28,7 @@ flowchart LR
         T1["🕕 Daily 06:00 BKK\ncron"]
         T2["📅 Monthly 5th 07:00 BKK\ncron"]
         T3["📤 Push to main"]
-        T4["⏰ External cron\nevery ~15 min"]
+        T4["⏰ Built-in scheduler\n±30 min window"]
         T5["👤 Manual / Discord Bot"]
     end
 
@@ -329,6 +329,8 @@ export GH_PAT="your-github-pat"           # Same PAT as GH_PAT_FOR_VARS (repo sc
 export GITHUB_REPO="owner/repo"            # e.g. "simon/DCA-Analysis"
 export DISCORD_CHANNEL_ID="123456789"      # Optional: restrict to one channel
 export DISCORD_ALLOWED_USERS="111,222"     # Optional: restrict to specific Discord user IDs
+export DCA_CRON_ENABLED="true"             # Optional: enable built-in DCA scheduler
+export TIMEZONE="Asia/Bangkok"             # Optional: timezone for scheduler (default: Asia/Bangkok)
 
 python discord_bot.py
 ```
@@ -338,6 +340,13 @@ python discord_bot.py
 - **Without it**: Bot only responds to @mentions and DMs
 - **With `DISCORD_ALLOWED_USERS` set**: Only listed user IDs can trigger actions
 - **DCA updates are validated**: AMOUNT must be 20–1000 THB, TIME must be HH:MM, BUY_ENABLED must be bool. Cannot add/remove symbols — only update existing ones.
+
+### Built-in DCA Scheduler
+When `DCA_CRON_ENABLED=true`, the bot replaces the need for an external cron service (e.g., cron-job.org) by dispatching `daily_dca.yml` at the right times:
+- Reads target buy times from `DCA_TARGET_MAP` and triggers the workflow within a **±30 min window** (clock-aligned ticks at :00, :15, :30, :45), giving ~5 attempts per target to handle GitHub Actions flakiness
+- Status and update commands show planned dispatch times so you can verify the schedule at a glance
+- Schedule refreshes **hourly**, on **startup**, and **opportunistically** whenever any Discord command reads/updates `DCA_TARGET_MAP`
+- The `daily_dca.yml` bash quick-check still handles all safety logic (time matching, double-buy prevention), so early triggers exit cheaply
 
 ### Hosting
 The bot runs separately from GitHub Actions — anywhere with Python 3.9+ and internet:

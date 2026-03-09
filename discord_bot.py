@@ -22,14 +22,19 @@ Required environment variables:
 Optional environment variables:
     DISCORD_CHANNEL_ID  - Restrict bot to one channel (responds to all messages there)
     DISCORD_ALLOWED_USERS - Comma-separated Discord user IDs (security restriction)
+    DCA_CRON_ENABLED    - "true" to enable built-in DCA scheduler (replaces cron-job.org)
+    TIMEZONE            - Timezone for scheduler (default: Asia/Bangkok)
 """
 import asyncio
 import json
 import os
 import re
 import sys
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import discord
+from discord.ext import tasks
 import requests
 import google.generativeai as genai
 
@@ -46,6 +51,10 @@ GITHUB_REPO = os.environ.get("GITHUB_REPO", "")
 # Optional restrictions
 CHANNEL_ID = os.environ.get("DISCORD_CHANNEL_ID")
 ALLOWED_USERS = os.environ.get("DISCORD_ALLOWED_USERS", "")
+
+# DCA Scheduler — replaces external cron-job.org polling
+DCA_CRON_ENABLED = os.environ.get("DCA_CRON_ENABLED", "false").lower() == "true"
+TIMEZONE = ZoneInfo(os.environ.get("TIMEZONE", "Asia/Bangkok"))
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +216,90 @@ def update_repo_variable(name: str, value: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# DCA Scheduler — smart cron replacement
+# ---------------------------------------------------------------------------
+
+# Maps "HH:MM" → {"symbols": {"BTC_THB": "2025-03-09", ...}} where value is LAST_BUY_DATE
+_dca_schedule: dict[str, dict] = {}
+
+
+def refresh_dca_schedule(raw_json: str | None) -> None:
+    """Parse DCA_TARGET_MAP and update the scheduler's target times."""
+    if not raw_json:
+        return
+    try:
+        target_map = json.loads(raw_json)
+    except (json.JSONDecodeError, ValueError):
+        return
+
+    # Collect enabled symbols grouped by their TIME, preserving LAST_BUY_DATE
+    time_slots: dict[str, dict[str, str]] = {}
+    for symbol, config in target_map.items():
+        if not isinstance(config, dict):
+            continue
+        if not config.get("BUY_ENABLED", True):
+            continue
+        time_val = config.get("TIME", "")
+        if not re.match(r"^\d{2}:\d{2}$", time_val):
+            continue
+        time_slots.setdefault(time_val, {})[symbol] = config.get("LAST_BUY_DATE", "")
+
+    _dca_schedule.clear()
+    _dca_schedule.update({
+        time_val: {"symbols": symbols}
+        for time_val, symbols in time_slots.items()
+    })
+
+
+def _get_repo_variable_and_refresh(name: str) -> str | None:
+    """Fetch a repo variable; if it's DCA_TARGET_MAP, opportunistically refresh the schedule."""
+    value = get_repo_variable(name)
+    if name == "DCA_TARGET_MAP" and value and DCA_CRON_ENABLED:
+        refresh_dca_schedule(value)
+    return value
+
+
+def _format_cron_status() -> str:
+    """Build a status line showing planned GHA dispatch times for all scheduled slots."""
+    if not DCA_CRON_ENABLED or not _dca_schedule:
+        return ""
+
+    now = datetime.now(TIMEZONE)
+    today = now.strftime("%Y-%m-%d")
+    current_min = now.hour * 60 + now.minute
+    parts: list[str] = []
+
+    for time_str in sorted(_dca_schedule):
+        info = _dca_schedule[time_str]
+        h, m = map(int, time_str.split(":"))
+        target_min = h * 60 + m
+
+        # Check if all symbols already bought today
+        symbols_dict = info["symbols"]
+        all_bought = all(lbd == today for lbd in symbols_dict.values())
+
+        # Compute all aligned dispatch times in the ±30 min window
+        dispatch_times: list[str] = []
+        for quarter in range(0, 24 * 4):
+            slot_min = quarter * 15
+            diff = slot_min - target_min
+            if -30 <= diff <= 30:
+                hh, mm = divmod(slot_min, 60)
+                tag = f"{hh:02d}:{mm:02d}"
+                # Strikethrough past slots or all slots if bought
+                slot_passed = current_min - slot_min >= 0
+                if all_bought or slot_passed:
+                    tag = f"~~{tag}~~"
+                dispatch_times.append(tag)
+
+        symbol_names = ", ".join(symbols_dict.keys())
+        done = " ✅" if all_bought else ""
+        parts.append(f"**{time_str}** ({symbol_names}){done}: {', '.join(dispatch_times)}")
+
+    return "\n⏰ **Cron Dispatches**\n" + "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
 # Action handlers
 # ---------------------------------------------------------------------------
 
@@ -218,7 +311,7 @@ def _symbols_from_dca_map() -> str:
     Returns comma-separated string like 'BTC/USDT, LINK/USDT, SUI/USDT'.
     Falls back to 'BTC/USDT' if the map cannot be read.
     """
-    raw = get_repo_variable("DCA_TARGET_MAP")
+    raw = _get_repo_variable_and_refresh("DCA_TARGET_MAP")
     if not raw:
         return "BTC/USDT"
     try:
@@ -310,7 +403,7 @@ async def handle_portfolio(params: dict, message: discord.Message):
 
 async def handle_status(params: dict, message: discord.Message):
     """Fetch and display the current DCA_TARGET_MAP configuration."""
-    raw = get_repo_variable("DCA_TARGET_MAP")
+    raw = _get_repo_variable_and_refresh("DCA_TARGET_MAP")
     if not raw:
         await message.reply("❌ Could not fetch DCA_TARGET_MAP from GitHub")
         return
@@ -334,6 +427,10 @@ async def handle_status(params: dict, message: discord.Message):
             )
         else:
             lines.append(f"🟢 **{symbol}** — `{config}`")
+
+    cron_status = _format_cron_status()
+    if cron_status:
+        lines.append(cron_status)
 
     await message.reply("\n".join(lines))
 
@@ -395,7 +492,7 @@ async def handle_update_dca(params: dict, message: discord.Message):
             return
 
     # Fetch current map
-    raw = get_repo_variable("DCA_TARGET_MAP")
+    raw = _get_repo_variable_and_refresh("DCA_TARGET_MAP")
     if not raw:
         await message.reply("❌ Could not fetch current DCA_TARGET_MAP")
         return
@@ -423,6 +520,9 @@ async def handle_update_dca(params: dict, message: discord.Message):
     # Save back to GitHub
     new_json = json.dumps(target_map, separators=(",", ":"))
     if update_repo_variable("DCA_TARGET_MAP", new_json):
+        # Refresh scheduler with the updated config
+        if DCA_CRON_ENABLED:
+            refresh_dca_schedule(new_json)
         # Build recap of full updated config
         lines = [f"✅ Updated **{symbol}** → **{field}**: `{old_value}` → `{value}`\n"]
         lines.append("**📋 DCA Configuration**\n")
@@ -438,6 +538,9 @@ async def handle_update_dca(params: dict, message: discord.Message):
                 )
             else:
                 lines.append(f"🟢 **{sym}** — `{config}`")
+        cron_status = _format_cron_status()
+        if cron_status:
+            lines.append(cron_status)
         await message.reply("\n".join(lines))
     else:
         await message.reply("❌ Failed to save DCA_TARGET_MAP to GitHub")
@@ -499,6 +602,74 @@ intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
 
+
+# ---------------------------------------------------------------------------
+# Scheduled tasks (DCA cron replacement)
+# ---------------------------------------------------------------------------
+
+# Clock-aligned times: every 15 min at :00, :15, :30, :45 in the configured timezone
+_QUARTER_HOURS = [
+    datetime.strptime(f"{h:02d}:{m:02d}", "%H:%M").time().replace(tzinfo=TIMEZONE)
+    for h in range(24) for m in (0, 15, 30, 45)
+]
+
+# Hourly refresh at :05 past every hour (offset to avoid collision with quarter-hour ticks)
+_HOURLY_REFRESH = [
+    datetime.strptime(f"{h:02d}:05", "%H:%M").time().replace(tzinfo=TIMEZONE)
+    for h in range(24)
+]
+
+
+@tasks.loop(time=_QUARTER_HOURS)
+async def dca_scheduler_tick():
+    """Check if any DCA target is within its ±30 min trigger window and dispatch the workflow."""
+    if not _dca_schedule:
+        return
+
+    now = datetime.now(TIMEZONE)
+    today = now.strftime("%Y-%m-%d")
+    current_min = now.hour * 60 + now.minute
+    should_dispatch = False
+    triggered_symbols: list[str] = []
+
+    for time_str, info in _dca_schedule.items():
+        # Check if current clock quarter is within ±30 min of target
+        h, m = map(int, time_str.split(":"))
+        target_min = h * 60 + m
+        diff = current_min - target_min
+
+        if -30 <= diff <= 30:
+            should_dispatch = True
+            triggered_symbols.extend(info["symbols"].keys())
+
+    if should_dispatch:
+        success = await asyncio.to_thread(trigger_workflow, "daily_dca.yml")
+        status = "✅" if success else "❌"
+        symbols_str = ", ".join(triggered_symbols)
+        print(f"{status} DCA cron dispatch for [{symbols_str}] at {now.strftime('%H:%M')}")
+
+
+
+@dca_scheduler_tick.before_loop
+async def _before_scheduler_tick():
+    await client.wait_until_ready()
+
+
+@tasks.loop(time=_HOURLY_REFRESH)
+async def dca_schedule_refresh():
+    """Periodically refresh the DCA schedule from GitHub."""
+    raw = await asyncio.to_thread(get_repo_variable, "DCA_TARGET_MAP")
+    refresh_dca_schedule(raw)
+    if _dca_schedule:
+        times = ", ".join(sorted(_dca_schedule.keys()))
+        print(f"🔄 DCA schedule refreshed: {times}")
+
+
+@dca_schedule_refresh.before_loop
+async def _before_schedule_refresh():
+    await client.wait_until_ready()
+
+
 ACTION_HANDLERS = {
     "analyze": handle_analyze,
     "portfolio": handle_portfolio,
@@ -519,6 +690,22 @@ async def on_ready():
         print(f"🔒 Allowed user IDs: {ALLOWED_USERS}")
     else:
         print("⚠️ No DISCORD_ALLOWED_USERS set — any user in the channel can trigger actions")
+
+    # Start DCA scheduler if enabled
+    if DCA_CRON_ENABLED:
+        # Initial schedule load
+        raw = await asyncio.to_thread(get_repo_variable, "DCA_TARGET_MAP")
+        refresh_dca_schedule(raw)
+        if _dca_schedule:
+            times = ", ".join(sorted(_dca_schedule.keys()))
+            print(f"⏰ DCA scheduler loaded: {times}")
+        else:
+            print("⏰ DCA scheduler enabled but no active targets found")
+        if not dca_scheduler_tick.is_running():
+            dca_scheduler_tick.start()
+        if not dca_schedule_refresh.is_running():
+            dca_schedule_refresh.start()
+        print(f"⏰ DCA scheduler started (±30 min window, 15 min ticks, TZ={TIMEZONE})")
 
 
 @client.event
