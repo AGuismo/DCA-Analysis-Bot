@@ -145,7 +145,7 @@ from bitkub_client import bitkub_request, get_thb_usd_rate
 ## GitHub Actions Workflows
 
 ### Dependency installation
-- `daily_dca.yml` and `crypto_analysis.yml` install from `requirements.txt`.
+- `daily_dca.yml` (daily 12:00 UTC + manual dispatch) and `crypto_analysis.yml` install from `requirements.txt`.
 - `portfolio_check.yml` installs only `requests` (sufficient — `bitkub_client.py` only needs stdlib + requests).
 - Always use `pip install --upgrade pip && pip install ...` for reliability.
 - All workflows use `cache: 'pip'` on the `setup-python` step.

@@ -17,7 +17,7 @@ The system consists of the following files:
 **Workflows** (`.github/workflows/`):
 
 1. **`crypto_analysis.yml`** — Runs daily (06:00 BKK / 23:00 UTC). Analyzes **60 days** of price data across **4 periods** (14, 30, 45, 60 days) for **all pairs in `DCA_TARGET_MAP`** to find the "Champion Time" for each. Uses AI synthesis to pick optimal buy time. Updates `DCA_TARGET_MAP`.
-2. **`daily_dca.yml`** — Triggered on **manual dispatch** only. Checks if current time matches target time for any enabled symbol. Executes market buy orders.
+2. **`daily_dca.yml`** — Triggered on **manual dispatch** + **daily 12:00 UTC safety net** (19:00 Bangkok). Checks if current time matches target time for any enabled symbol. Executes market buy orders.
 3. **`portfolio_check.yml`** — Runs **monthly on the 5th at 07:00 BKK** (00:00 UTC). Fetches balances for all configured coins, calculates portfolio value in THB and USD, includes the previous month's trade history (5th-to-5th window), sends Discord report. Also runs on every push to main (short balance-only report).
 
 ## System Orchestration
@@ -30,6 +30,8 @@ flowchart LR
         T3["📤 Push to main"]
         T4["⏰ Built-in scheduler\n±30 min window"]
         T5["👤 Manual / Discord Bot"]
+        T6["🕛 Daily 12:00 UTC\nsafety net cron"]
+        T7["🚀 Discord Buy Now\nimmediate dispatch"]
     end
 
     subgraph WORKFLOWS["🔄 GitHub Actions Workflows"]
@@ -55,6 +57,8 @@ flowchart LR
 
     T4 -->|"dispatch API"| W2
     T5 --> W2
+    T6 -->|"catch-up"| W2
+    T7 -->|"sets TIME + dispatch"| W2
     W2 --> O3
     W2 --> O4
     W2 --> O5
@@ -116,7 +120,7 @@ Go to `Settings` -> `Secrets and variables` -> `Actions` -> `New repository vari
   - **Full Report (false)**: Sends detailed analysis with all time period breakdowns - use for deep dives
 
 **Trader Workflow (`daily_dca.yml`)**:
-- **Trigger**: **Manual dispatch ONLY** (no automatic cron schedule by design). Triggered via GitHub Actions UI or workflow_dispatch API
+- **Trigger**: Manual dispatch + **daily 12:00 UTC cron** (19:00 Bangkok) as a safety net in case the Discord bot or external cron is down
 - **Concurrency**: Only one trade workflow runs at a time (queued, not cancelled)
 - **Pre-Check**: Bash Quick Check runs first (no checkout/Python needed). Only checks out code and installs dependencies if a trade is needed
 - **Safeguards**: Multiple layers check `BUY_ENABLED`, `LAST_BUY_DATE`, and time window
@@ -164,7 +168,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A["⏰ Trigger\nexternal cron every ~15 min\nOR manual dispatch"] --> B["⚡ Bash Quick Check\nno checkout required"]
+    A["⏰ Trigger\nbuilt-in scheduler ~15 min\nOR daily 12:00 UTC safety net\nOR Discord Buy Now\nOR manual dispatch"] --> B["⚡ Bash Quick Check\nno checkout required"]
     B --> C{Any symbol has\nBUY_ENABLED=true\nand LAST_BUY_DATE ≠ today\nand time match?}
     C -->|No match| D["🛑 Exit immediately\n0 resources used"]
     C -->|Match found| E["Checkout repo\nSetup Python\nInstall deps"]
@@ -181,7 +185,7 @@ flowchart TD
     N --> O["Update LAST_BUY_DATE\nin DCA_TARGET_MAP\n3 retries — fails loudly"]
 ```
 
-1. **Manual trigger** via GitHub Actions UI (Actions tab → Daily Crypto DCA → Run workflow) or workflow_dispatch API call
+1. **Trigger** via built-in DCA scheduler (±30 min window), daily 12:00 UTC safety net cron, Discord "Buy Now" command, or manual GitHub Actions UI dispatch
 2. **Bash Quick Check** (no checkout/Python required): Filters by `BUY_ENABLED`, `LAST_BUY_DATE`, time window
 3. If no match → Workflow ends (fast exit, no resources used)
 4. If match found → Checkout repo → Setup Python → Install deps → Run Python
@@ -193,7 +197,7 @@ flowchart TD
 10. Sends Discord alert with trade details and Ghostfolio status
 11. Updates `LAST_BUY_DATE` with 3 retries (fails loudly on error)
 
-**Why Manual Dispatch?**: The system intentionally has NO automatic cron schedule on the trader workflow. This gives you complete control over trade execution timing. While analysis runs daily to update optimal buy times, you decide when to actually execute trades.
+**Daily Safety Net**: The 12:00 UTC cron ensures trades still execute even if the Discord bot or external cron service is down. The bash quick-check's `DIFF >= -5` logic means it catches any enabled symbol whose target TIME has already passed today, while `LAST_BUY_DATE` prevents double-buys if the bot already triggered it earlier.
 
 **Automating the trigger (optional)**: To run the trader automatically every 15 minutes without adding a cron schedule to the workflow itself, you can call the `workflow_dispatch` API externally:
 - **Local cron job**: Add a crontab entry on any always-on machine: `*/15 * * * * curl -s -X POST -H "Authorization: token YOUR_PAT" -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/YOUR_USER/YOUR_REPO/actions/workflows/daily_dca.yml/dispatches -d '{"ref":"main"}'`
