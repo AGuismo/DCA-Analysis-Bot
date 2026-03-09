@@ -301,7 +301,7 @@ def _format_cron_status() -> str:
         for quarter in range(0, 24 * 4):
             slot_min = quarter * 15
             diff = _wrap_diff(slot_min, target_min)
-            if -30 <= diff <= 30:
+            if -15 <= diff <= 45:
                 slots.append((diff, slot_min))
         slots.sort()
 
@@ -621,8 +621,8 @@ async def handle_buy_now(params: dict, message: discord.Message):
         await message.reply(f"❌ Config for {symbol} is not in dict format")
         return
 
-    # Compute next quarter hour
-    new_time = _next_quarter_hour()
+    # Use current time so the scheduler window (-15 to +45 min) triggers immediately
+    new_time = datetime.now(TIMEZONE).strftime("%H:%M")
     old_time = target_map[symbol].get("TIME", "?")
     was_enabled = target_map[symbol].get("BUY_ENABLED", True)
 
@@ -756,7 +756,7 @@ async def dca_scheduler_tick():
         target_min = h * 60 + m
         diff = _wrap_diff(current_min, target_min)
 
-        if -30 <= diff <= 30:
+        if -15 <= diff <= 45:
             should_dispatch = True
             triggered_symbols.extend(info["symbols"].keys())
 

@@ -31,7 +31,7 @@ discord_bot.py      ← Discord bot + DCA scheduler (standalone, triggers GitHub
 - `DCA_TARGET_MAP` (GitHub repo variable) is the central config: `{"BTC_THB": {"TIME": "23:00", "AMOUNT": 800, "BUY_ENABLED": true, "LAST_BUY_DATE": ""}}`
 - `crypto_analysis.py` updates `TIME` fields via GitHub Actions output → workflow merge step
 - `crypto_dca.py` reads the map, executes trades, then updates `LAST_BUY_DATE` via GitHub API with 3-retry logic
-- `discord_bot.py` reads/writes `DCA_TARGET_MAP` directly via GitHub API; when `DCA_CRON_ENABLED=true`, also schedules `daily_dca.yml` dispatches within ±30 min of each target TIME (15 min ticks)
+- `discord_bot.py` reads/writes `DCA_TARGET_MAP` directly via GitHub API; when `DCA_CRON_ENABLED=true`, also schedules `daily_dca.yml` dispatches from -15 min to +45 min of each target TIME (5 quarter-hour ticks); `buy_now` sets TIME to the current HH:MM so the window triggers immediately
 
 ### Key Patterns
 
