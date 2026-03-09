@@ -311,6 +311,7 @@ A self-hosted Discord bot (`discord_bot.py`) that lets you control the DCA syste
 - **View Config**: "Show status" / "What's the current config?"
 - **View Accounts**: "Show accounts" / "Portfolio account map"
 - **Update DCA Config**: "Set BTC amount to 600" / "Set BTC time to 22:00" / "Disable LINK"
+- **Buy Now**: "Buy LINK now" / "Purchase SUI immediately" — sets TIME to next quarter hour, enables the symbol, and dispatches the workflow immediately
 
 All commands are interpreted via Gemini AI — just type naturally.
 

@@ -21,7 +21,7 @@ This is a **Python 3.12** cryptocurrency DCA (Dollar-Cost Averaging) automation 
 | `portfolio_balance.py` | Portfolio reporter — fetches balances, sends Discord notifications |
 | `portfolio_logger.py` | Logs trades to Ghostfolio portfolio tracker |
 | `gist_logger.py` | Logs trades to a GitHub Gist as a markdown trade ledger |
-| `discord_bot.py` | Discord bot — NL control of workflows and DCA config (runs separately, not on GitHub Actions) |
+| `discord_bot.py` | Discord bot — NL control of workflows, DCA config, and instant buy (runs separately, not on GitHub Actions) |
 
 Workflows live in `.github/workflows/`. All secrets and config are injected via GitHub Actions environment variables — **never hardcoded**.
 The Discord bot runs separately and uses its own env vars (`DISCORD_BOT_TOKEN`, `GH_PAT`, `GITHUB_REPO`).

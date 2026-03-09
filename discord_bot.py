@@ -30,7 +30,7 @@ import json
 import os
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import discord
@@ -97,16 +97,20 @@ Available actions:
 
 5. "accounts" - Show Ghostfolio portfolio account mapping
 
-6. "help" - Show available commands
+6. "buy_now" - Immediately buy a specific coin
+   - symbol: ALWAYS use "COIN_THB" format (same rules as update_dca)
+   Note: "buy LINK now", "buy BTC immediately", "purchase SUI" all map here.
 
-7. "unknown" - Message is not a recognized command
+7. "help" - Show available commands
+
+8. "unknown" - Message is not a recognized command
 
 Respond with ONLY valid JSON, no markdown fences:
 {"action": "...", "params": {...}, "reply": "Brief description of what will be done"}"""
 
 
 # Valid actions the bot supports
-VALID_ACTIONS = {"analyze", "portfolio", "status", "update_dca", "accounts", "help", "unknown"}
+VALID_ACTIONS = {"analyze", "portfolio", "status", "update_dca", "buy_now", "accounts", "help", "unknown"}
 
 
 def _validate_intent(intent: dict) -> dict:
@@ -121,6 +125,12 @@ def _validate_intent(intent: dict) -> dict:
     params = intent.get("params", {})
     if not isinstance(params, dict):
         params = {}
+
+    # For buy_now, enforce symbol is present
+    if action == "buy_now":
+        symbol = params.get("symbol")
+        if not isinstance(symbol, str) or not symbol.strip():
+            return {"action": "unknown", "params": {}, "reply": "Could not determine symbol"}
 
     # For update_dca, enforce required param types from the AI
     if action == "update_dca":
@@ -558,6 +568,101 @@ async def handle_update_dca(params: dict, message: discord.Message):
         await message.reply("❌ Failed to save DCA_TARGET_MAP to GitHub")
 
 
+def _next_quarter_hour() -> str:
+    """Return the next clock-aligned quarter hour (HH:MM) in the configured timezone.
+
+    If the current time is already on a quarter boundary, return that time.
+    E.g. 16:05 → '16:15', 16:15 → '16:15', 16:16 → '16:30', 23:59 → '00:00'.
+    """
+    now = datetime.now(TIMEZONE)
+    minute = now.minute
+    # Round up to next multiple of 15 (stay if already aligned)
+    remainder = minute % 15
+    if remainder == 0:
+        target = now
+    else:
+        target = now.replace(second=0, microsecond=0) + timedelta(minutes=15 - remainder)
+    return target.strftime("%H:%M")
+
+
+async def handle_buy_now(params: dict, message: discord.Message):
+    """Set a symbol's TIME to the next quarter hour, enable it, and dispatch the workflow immediately."""
+    symbol = str(params.get("symbol", "")).upper().strip()
+    if not symbol:
+        await message.reply("❌ Please specify which coin to buy (e.g., 'buy LINK now')")
+        return
+
+    # Normalise to COIN_THB
+    for sep in ("/USDT", "_USDT", "/BUSD", "_BUSD", "/THB", "/USD"):
+        if symbol.endswith(sep):
+            symbol = symbol[: -len(sep)]
+            break
+    if not symbol.endswith("_THB"):
+        symbol = f"{symbol}_THB"
+
+    # Fetch current map
+    raw = _get_repo_variable_and_refresh("DCA_TARGET_MAP")
+    if not raw:
+        await message.reply("❌ Could not fetch DCA_TARGET_MAP from GitHub")
+        return
+
+    try:
+        target_map = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        await message.reply("❌ DCA_TARGET_MAP is malformed, cannot update safely")
+        return
+
+    if symbol not in target_map:
+        available = ", ".join(target_map.keys())
+        await message.reply(f"❌ Symbol **{symbol}** not found. Available: {available}")
+        return
+
+    if not isinstance(target_map[symbol], dict):
+        await message.reply(f"❌ Config for {symbol} is not in dict format")
+        return
+
+    # Compute next quarter hour
+    new_time = _next_quarter_hour()
+    old_time = target_map[symbol].get("TIME", "?")
+    was_enabled = target_map[symbol].get("BUY_ENABLED", True)
+
+    # Update TIME and ensure BUY_ENABLED=true (never touch LAST_BUY_DATE)
+    target_map[symbol]["TIME"] = new_time
+    target_map[symbol]["BUY_ENABLED"] = True
+
+    # Save to GitHub
+    new_json = json.dumps(target_map, separators=(",", ":"))
+    if not update_repo_variable("DCA_TARGET_MAP", new_json):
+        await message.reply("❌ Failed to save DCA_TARGET_MAP to GitHub")
+        return
+
+    # Refresh scheduler
+    if DCA_CRON_ENABLED:
+        refresh_dca_schedule(new_json)
+
+    # Dispatch workflow immediately
+    dispatched = await asyncio.to_thread(trigger_workflow, "daily_dca.yml")
+
+    # Build response
+    changes = [f"⏰ TIME: `{old_time}` → `{new_time}`"]
+    if not was_enabled:
+        changes.append("🟢 BUY_ENABLED: `false` → `true`")
+    dispatch_status = "✅ Workflow dispatched" if dispatched else "❌ Workflow dispatch failed"
+
+    last_buy = target_map[symbol].get("LAST_BUY_DATE", "")
+    today = datetime.now(TIMEZONE).strftime("%Y-%m-%d")
+    warning = ""
+    if last_buy == today:
+        warning = f"\n⚠️ **Note:** LAST_BUY_DATE is already `{today}` — the workflow may skip this buy."
+
+    await message.reply(
+        f"🚀 **Buy Now: {symbol}**\n"
+        + "\n".join(changes)
+        + f"\n{dispatch_status}"
+        + warning
+    )
+
+
 async def handle_accounts(params: dict, message: discord.Message):
     """Fetch and display the PORTFOLIO_ACCOUNT_MAP configuration."""
     raw = get_repo_variable("PORTFOLIO_ACCOUNT_MAP")
@@ -595,6 +700,7 @@ HELP_TEXT = """**🤖 DCA Bot — Natural Language Commands**
 • "Set BTC amount to 600" / "Change LINK amount to 200"
 • "Set BTC time to 22:00"
 • "Disable LINK" / "Enable BTC"
+• "Buy LINK now" / "Purchase SUI immediately"
 ✅ AMOUNT range: 20–1000 THB per coin
 
 All commands are interpreted via AI — just type naturally!
@@ -687,6 +793,7 @@ ACTION_HANDLERS = {
     "portfolio": handle_portfolio,
     "status": handle_status,
     "update_dca": handle_update_dca,
+    "buy_now": handle_buy_now,
     "accounts": handle_accounts,
     "help": handle_help,
 }
@@ -766,7 +873,7 @@ async def on_message(message: discord.Message):
     if handler:
         # Block write actions when no user allowlist is configured (and this isn't a DM).
         # Users with DISCORD_ALLOWED_USERS set are unaffected — this branch is never reached.
-        _WRITE_ACTIONS = {"analyze", "portfolio", "update_dca"}
+        _WRITE_ACTIONS = {"analyze", "portfolio", "update_dca", "buy_now"}
         if not ALLOWED_USERS and not is_dm and action in _WRITE_ACTIONS:
             await message.reply(
                 "⚠️ Action commands require `DISCORD_ALLOWED_USERS` to be configured. "
