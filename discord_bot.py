@@ -90,7 +90,7 @@ Available actions:
      "btc" → "BTC_THB", "bitcoin" → "BTC_THB", "link" → "LINK_THB", "chainlink" → "LINK_THB".
      Never output COIN/USDT, COIN_USDT, or a bare coin name like "BTC" — always append "_THB".
    - field: one of "TIME", "AMOUNT", "BUY_ENABLED"
-   - value: new value (HH:MM for TIME, number 20-1000 for AMOUNT, true/false for BUY_ENABLED)
+   - value: new value (HH:MM for TIME, number 20-1505 for AMOUNT, true/false for BUY_ENABLED)
    Note: "disable X" or "turn off X" means BUY_ENABLED=false; "enable X" or "turn on X" means BUY_ENABLED=true.
 
 4. "status" - Show current DCA configuration
@@ -496,12 +496,12 @@ async def handle_update_dca(params: dict, message: discord.Message):
     elif field == "AMOUNT":
         try:
             value = float(value)
-            if value < 20 or value > 1000:
+            if value < 20 or value > 1505:
                 raise ValueError("out of range")
             if value == int(value):
                 value = int(value)
         except (ValueError, TypeError):
-            await message.reply("❌ AMOUNT must be a number between 20 and 1000")
+            await message.reply("❌ AMOUNT must be a number between 20 and 1505")
             return
 
     elif field == "BUY_ENABLED":
@@ -701,7 +701,7 @@ HELP_TEXT = """**🤖 DCA Bot — Natural Language Commands**
 • "Set BTC time to 22:00"
 • "Disable LINK" / "Enable BTC"
 • "Buy LINK now" / "Purchase SUI immediately"
-✅ AMOUNT range: 20–1000 THB per coin
+✅ AMOUNT range: 20–1505 THB per coin
 
 All commands are interpreted via AI — just type naturally!
 """
